@@ -23,7 +23,7 @@ Le signal sonore et le compteur de nouvelles demandes marchent quelle que soit l
 
 ## Stack
 
-Next.js 16 (App Router), PostgreSQL, Drizzle ORM. Déploiement prévu sur Vercel + Neon.
+Next.js 16 (App Router), PostgreSQL, Drizzle ORM. Hébergement : Vercel + Supabase.
 
 ## Les pages
 
@@ -52,23 +52,22 @@ Tout se règle depuis la réception (page Réglages) : rien à modifier dans le 
 
 Les textes des questions fréquentes sont traduits dans `src/i18n/messages/` (un fichier par langue) ; les valeurs (heures, prix, Wi-Fi…) y sont insérées automatiquement.
 
-## Déployer sur Vercel + Neon
+## Mise en production (Vercel + Supabase)
 
-1. **Base de données** : créer un projet gratuit sur [neon.tech](https://neon.tech) et copier l'URL de connexion *pooled*.
-2. **Vercel** : *Add New → Project*, importer ce dépôt, puis ajouter les variables d'environnement (voir `.env.example`) :
-   - `DATABASE_URL` : l'URL Neon
+Aucun serveur à gérer et aucune commande à lancer : à chaque déploiement, Vercel crée ou met à jour les tables et les 16 chambres (`npm run vercel-build`), puis construit le site.
+
+1. **Base de données, sur [supabase.com](https://supabase.com)** : *New project*, région **Europe West (Paris)**, noter le mot de passe de la base. Puis *Connect* → onglet *ORMs* ou *Connection string* → **Transaction pooler** (port 6543). Copier l'URL et y remplacer `[YOUR-PASSWORD]` par le mot de passe.
+2. **Site, sur [vercel.com](https://vercel.com)** : *Add New → Project*, importer `Baba-hotel-clients`, puis dans *Environment Variables* :
+   - `DATABASE_URL` : l'URL de l'étape 1
    - `RECEPTION_PASSWORD` : le mot de passe de l'écran réception
-   - `SESSION_SECRET` : 32 caractères aléatoires (`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`)
-   - `PUBLIC_BASE_URL` : l'adresse du site, par exemple `https://baba-hotel-clients.vercel.app`
-3. **Créer les tables et les chambres** depuis ton ordinateur, avec le même `DATABASE_URL` dans un fichier `.env` :
-   ```bash
-   npm install
-   npm run db:migrate
-   npm run db:seed
-   ```
-4. Ouvrir `/reception`, se connecter, cliquer sur **QR codes** et imprimer.
+3. *Deploy*. Le site est en ligne en 2 minutes sur `https://<projet>.vercel.app`.
+4. Ouvrir `/reception`, se connecter, remplir le mot de passe Wi-Fi dans **Réglages**, ajouter les produits dans **Minibar**, puis imprimer les **QR codes**.
 
-> Si l'adresse du site change, il faut réimprimer les QR codes : ils contiennent l'URL complète.
+Les fonctions serveur tournent à Paris (`vercel.json`, région `cdg1`), à côté de la base.
+
+> **Plans.** Le plan gratuit de Vercel (Hobby) est réservé à un usage personnel et non commercial : pour l'hôtel, il faut le plan Pro. Le plan gratuit de Supabase suffit largement (500 Mo) ; il se met en pause après 7 jours sans aucune activité, ce qui n'arrive pas tant que l'écran de la réception est ouvert.
+
+> **Nom de domaine.** Pour une adresse du type `aide.baba-hotel.com` : Vercel → *Settings → Domains*. Faites-le **avant d'imprimer les QR codes** : ils contiennent l'adresse complète.
 
 ## Développement local
 

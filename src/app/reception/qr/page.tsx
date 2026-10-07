@@ -12,6 +12,8 @@ export const metadata: Metadata = { title: "QR codes — Baba Hotel" };
 /** Adresse publique du site (à fixer dans PUBLIC_BASE_URL en production). */
 async function baseUrl() {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+  // Sur Vercel : l'adresse de production du projet (fixe, contrairement aux URL de prévisualisation)
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const proto = h.get("x-forwarded-proto") ?? "https";

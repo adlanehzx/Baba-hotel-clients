@@ -9,10 +9,17 @@ import { cookies } from "next/headers";
 export const SESSION_COOKIE = "baba_reception";
 const SESSION_DAYS = 30;
 
+/**
+ * Clé de signature des sessions. Si SESSION_SECRET n'est pas défini, elle est
+ * dérivée de l'URL de la base (qui contient son mot de passe et reste côté serveur) :
+ * une variable de moins à configurer.
+ */
 function secret(): string {
   const s = process.env.SESSION_SECRET;
-  if (!s || s.length < 32) throw new Error("SESSION_SECRET manquant ou trop court (32 caractères minimum)");
-  return s;
+  if (s && s.length >= 32) return s;
+  const db = process.env.DATABASE_URL;
+  if (!db) throw new Error("SESSION_SECRET ou DATABASE_URL manquant");
+  return createHmac("sha256", db).update("baba-reception-session").digest("base64url");
 }
 
 function sign(value: string): string {
