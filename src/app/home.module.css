@@ -1,0 +1,6 @@
+.main {
+  min-height: 100svh; display: grid; place-content: center; gap: .4rem;
+  text-align: center; padding: 2rem; color: var(--zinc);
+}
+.title { font: italic 400 clamp(3rem, 12vw, 5rem)/1 var(--serif); color: var(--encre); margin-bottom: 1rem; }
+.staff { margin-top: 2.5rem; font-size: .85rem; }

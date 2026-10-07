@@ -1,0 +1,114 @@
+/* ---------- Boutons ---------- */
+.primary, .ghost {
+  border-radius: 999px; padding: 9px 16px; font-weight: 600; font-size: .92rem; cursor: pointer;
+  text-decoration: none; display: inline-flex; align-items: center; justify-content: center;
+  transition: background-color .25s, color .25s, transform .15s;
+}
+.primary { background: var(--porte); color: var(--blanc); border: 1.5px solid var(--porte); }
+.primary:hover { background: var(--porte-2); }
+.ghost { background: transparent; color: var(--encre); border: 1.5px solid color-mix(in srgb, var(--encre) 25%, transparent); }
+.ghost:hover { border-color: var(--encre); }
+.primary:active, .ghost:active { transform: scale(.97); }
+.primary:disabled { opacity: .6; }
+
+/* ---------- Connexion ---------- */
+.loginWrap { min-height: 100svh; display: grid; place-items: center; padding: 16px; }
+.login {
+  width: min(100%, 360px); background: var(--blanc); border-radius: 20px; padding: 28px;
+  display: grid; gap: 10px;
+}
+.login h1 { font-size: 2.2rem; font-weight: 400; margin-bottom: 10px; }
+.login label { font-weight: 600; font-size: .92rem; }
+.login input {
+  border: 1.5px solid var(--pierre-2); border-radius: 10px; padding: 12px; font-size: 1rem; background: var(--blanc);
+}
+.login input:focus { outline: none; border-color: var(--encre); }
+.login .primary { padding: 13px; margin-top: 6px; }
+.error { color: var(--ligne4); font-size: .9rem; }
+
+/* ---------- Tableau ---------- */
+.board { min-height: 100svh; padding: 0 20px 40px; }
+.bar {
+  position: sticky; top: 0; z-index: 2; background: var(--pierre);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 0; border-bottom: 1px solid color-mix(in srgb, var(--encre) 12%, transparent);
+}
+.bar h1 { font-size: 1.7rem; font-weight: 400; letter-spacing: -.01em; }
+.bar h1 span { font-style: italic; color: var(--zinc); }
+.barActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.soundOn { font-size: .88rem; color: var(--ok); font-weight: 600; padding: 0 8px; }
+.offline { font-size: .88rem; color: var(--warn); font-weight: 600; }
+.hint {
+  margin: 16px 0 0; padding: 12px 16px; border-radius: 12px; font-size: .92rem;
+  background: color-mix(in srgb, var(--ligne4) 8%, var(--blanc));
+}
+
+.columns {
+  margin-top: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start;
+}
+.column h2 { font: 600 1rem var(--sans); display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.count {
+  min-width: 26px; height: 26px; border-radius: 999px; display: inline-grid; place-items: center;
+  font-size: .85rem; background: var(--pierre-2); padding: 0 8px; font-variant-numeric: tabular-nums;
+}
+.column[data-status="NEW"] .count { background: var(--ligne4); color: var(--blanc); }
+.column ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.empty { color: var(--zinc); font-size: .92rem; padding: 18px; border: 1.5px dashed var(--pierre-2); border-radius: 14px; }
+
+.card {
+  background: var(--blanc); border-radius: 16px; padding: 14px 16px 16px;
+  border-inline-start: 5px solid var(--pierre-2);
+  display: grid; gap: 6px;
+  animation: cardIn .5s var(--ease);
+}
+.column[data-status="NEW"] .card { border-inline-start-color: var(--ligne4); }
+.column[data-status="IN_PROGRESS"] .card { border-inline-start-color: var(--porte); }
+.column[data-status="DONE"] .card { opacity: .72; }
+.card[data-fresh] { animation: cardIn .5s var(--ease), flash 1.4s ease-in-out 3; }
+.card[data-late] { box-shadow: inset 0 0 0 2px var(--warn); }
+.card[data-late] .time { color: var(--warn); font-weight: 600; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
+@keyframes flash { 50% { background: color-mix(in srgb, var(--ligne4) 14%, var(--blanc)); } }
+
+.cardHead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.room { font-size: 2rem; line-height: 1; letter-spacing: -.02em; }
+.room small { font: 500 .85rem var(--sans); color: var(--zinc); letter-spacing: 0; }
+.time { font-size: .85rem; color: var(--zinc); font-variant-numeric: tabular-nums; }
+.cat { font-weight: 600; }
+.msg {
+  margin: 2px 0; padding: 10px 12px; border-radius: 10px; background: var(--pierre);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.lang { font-size: .85rem; color: var(--zinc); }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+
+@media (max-width: 900px) {
+  .columns { grid-template-columns: 1fr; }
+  .board { padding: 0 12px 40px; }
+}
+
+/* ---------- Planche de QR codes ---------- */
+.qrPage { padding: 24px; }
+.qrBar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; }
+.qrBar h1 { font-size: 1.8rem; font-weight: 400; }
+.qrBar p { color: var(--zinc); font-size: .92rem; max-width: 48ch; }
+.qrGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(62mm, 1fr)); gap: 6mm; }
+.qrCard {
+  background: var(--blanc); border-radius: 4mm; padding: 6mm 5mm 5mm; text-align: center;
+  display: grid; justify-items: center; gap: 2mm; break-inside: avoid;
+  border: .3mm dashed color-mix(in srgb, var(--encre) 25%, transparent);
+}
+.qrHotel { font: italic 400 14pt/1 var(--serif); }
+.qrLine { font-size: 8.5pt; color: var(--zinc); line-height: 1.3; }
+.qrCode { width: 42mm; height: 42mm; }
+.qrCode svg { width: 100%; height: 100%; display: block; }
+.qrRoom { font: 400 22pt/1 var(--serif); }
+.qrRoom small { font: 500 8pt var(--sans); color: var(--zinc); display: block; margin-bottom: 1mm; }
+
+@media print {
+  .qrBar { display: none; }
+  .qrPage { padding: 0; }
+  .qrGrid { grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .qrCard { background: #fff; }
+  @page { size: A4; margin: 10mm; }
+}

@@ -1,0 +1,42 @@
+/* Palette reprise du site du Baba Hotel : pierre de Paris, vert porte cochère,
+   magenta de la ligne 4 (accent unique). */
+:root {
+  --pierre: #e4e3de;
+  --pierre-2: #d8d7d1;
+  --blanc: #f7f7f4;
+  --zinc: #56636a;
+  --porte: #1e3a32;
+  --porte-2: #2a4d43;
+  --ligne4: #a0006e;
+  --ligne4-dark: #7f0058;
+  --encre: #17201c;
+  --ok: #2f6b3f;
+  --warn: #9a5b00;
+
+  --serif: "Bodoni Moda", "Didot", Georgia, serif;
+  --sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", "Noto Sans", "Noto Sans Arabic", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
+  --ease: cubic-bezier(.22, 1, .36, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--pierre);
+  color: var(--encre);
+  font: 400 1rem/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, p { margin: 0; }
+a { color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--ligne4); outline-offset: 2px; }
+
+/* Les écritures non latines n'ont pas de Bodoni : on garde la police système */
+:lang(ar) .serif, :lang(zh) .serif, :lang(ja) .serif, :lang(ko) .serif, :lang(ru) .serif { font-family: var(--sans); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+@media print { body { background: #fff; } }
