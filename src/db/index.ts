@@ -1,19 +1,28 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import * as schema from "./schema";
-import { normalizeDbUrl } from "@/lib/db-url";
 
-const globalForDb = globalThis as unknown as { pool?: Pool };
+type Db = DrizzleD1Database<typeof schema>;
 
-function makePool() {
-  // Pas d'erreur ici si DATABASE_URL manque : la connexion n'est ouverte
-  // qu'à la première requête (le build Next.js importe ce fichier sans base).
-  return new Pool({ connectionString: normalizeDbUrl(process.env.DATABASE_URL), max: 5 });
+/**
+ * Base D1 de la requête en cours (binding `DB` défini dans wrangler.jsonc).
+ * Une instance par requête : c'est léger, D1 ne garde pas de connexion ouverte.
+ */
+export function getDb(): Db {
+  const { env } = getCloudflareContext();
+  return drizzle(env.DB, { schema });
 }
 
-// Une seule connexion réutilisée (évite d'ouvrir un pool à chaque rechargement en dev)
-const pool = globalForDb.pool ?? makePool();
-if (process.env.NODE_ENV !== "production") globalForDb.pool = pool;
+/**
+ * Raccourci : `db.select()…` résout la base de la requête en cours au moment de l'appel.
+ * (Sur Workers, la base n'est connue qu'à l'intérieur d'une requête.)
+ */
+export const db = new Proxy({} as Db, {
+  get(_target, prop) {
+    const real = getDb();
+    const value = Reflect.get(real, prop, real);
+    return typeof value === "function" ? value.bind(real) : value;
+  },
+});
 
-export const db = drizzle(pool, { schema });
 export * from "./schema";

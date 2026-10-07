@@ -23,7 +23,7 @@ Le signal sonore et le compteur de nouvelles demandes marchent quelle que soit l
 
 ## Stack
 
-Next.js 16 (App Router), PostgreSQL, Drizzle ORM. Hébergement : Vercel + Supabase.
+Next.js 16 (App Router), Drizzle ORM. Hébergement : **Cloudflare Workers** (adaptateur OpenNext) avec la base **Cloudflare D1** (SQLite).
 
 ## Les pages
 
@@ -52,34 +52,44 @@ Tout se règle depuis la réception (page Réglages) : rien à modifier dans le 
 
 Les textes des questions fréquentes sont traduits dans `src/i18n/messages/` (un fichier par langue) ; les valeurs (heures, prix, Wi-Fi…) y sont insérées automatiquement.
 
-## Mise en production (Vercel + Supabase)
+## Mise en production (Cloudflare)
 
-Aucun serveur à gérer et aucune commande à lancer : à chaque déploiement, Vercel crée ou met à jour les tables et les 16 chambres (`npm run vercel-build`), puis construit le site.
+La base D1 `baba-hotel-clients` existe déjà, avec ses tables (voir `wrangler.jsonc`). Les 16 chambres et leurs jetons de QR code sont créés automatiquement à la première connexion de la réception (les jetons ne sont jamais écrits dans ce dépôt, qui est public).
 
-1. **Base de données, sur [supabase.com](https://supabase.com)** : *New project*, région **Europe West (Paris)**, noter le mot de passe de la base. Puis *Connect* → onglet *ORMs* ou *Connection string* → **Transaction pooler** (port 6543). Copier l'URL et y remplacer `[YOUR-PASSWORD]` par le mot de passe.
-2. **Site, sur [vercel.com](https://vercel.com)** : *Add New → Project*, importer `Baba-hotel-clients`, puis dans *Environment Variables* :
-   - `DATABASE_URL` : l'URL de l'étape 1
-   - `RECEPTION_PASSWORD` : le mot de passe de l'écran réception
-3. *Deploy*. Le site est en ligne en 2 minutes sur `https://<projet>.vercel.app`.
-4. Ouvrir `/reception`, se connecter, remplir le mot de passe Wi-Fi dans **Réglages**, ajouter les produits dans **Minibar**, puis imprimer les **QR codes**.
+1. Cloudflare → **Workers & Pages → Create → Import a repository** → choisir `Baba-hotel-clients` (autoriser l'application GitHub de Cloudflare sur ce dépôt si besoin).
+2. Réglages du projet :
+   - **Project name** : `baba-hotel-clients` (doit être identique au `name` de `wrangler.jsonc`)
+   - **Build command** : `npx opennextjs-cloudflare build`
+   - **Deploy command** : `npx opennextjs-cloudflare deploy`
+3. Après le premier déploiement : **Settings → Variables and Secrets → Add** → type *Secret*, nom `RECEPTION_PASSWORD`, valeur : le mot de passe de la réception. Redéployer (*Deployments → Retry*) pour qu'il soit pris en compte.
+4. Ouvrir `https://baba-hotel-clients.<compte>.workers.dev/reception`, se connecter : les chambres sont créées. Remplir le Wi-Fi dans **Réglages**, ajouter les produits dans **Minibar**, puis imprimer les **QR codes**.
 
-Les fonctions serveur tournent à Paris (`vercel.json`, région `cdg1`), à côté de la base.
+Chaque `git push` sur `main` redéploie automatiquement.
 
-> **Plans.** Le plan gratuit de Vercel (Hobby) est réservé à un usage personnel et non commercial : pour l'hôtel, il faut le plan Pro. Le plan gratuit de Supabase suffit largement (500 Mo) ; il se met en pause après 7 jours sans aucune activité, ce qui n'arrive pas tant que l'écran de la réception est ouvert.
+> **Plan.** Le plan gratuit de Workers autorise l'usage commercial (100 000 requêtes par jour, largement assez). Il limite chaque requête à 10 ms de calcul : si des pages affichent « Error 1102 », passer au plan Workers Paid (5 $/mois).
 
-> **Nom de domaine.** Pour une adresse du type `aide.baba-hotel.com` : Vercel → *Settings → Domains*. Faites-le **avant d'imprimer les QR codes** : ils contiennent l'adresse complète.
+> **Nom de domaine.** Pour une adresse du type `aide.baba-hotel.com` : Worker → *Settings → Domains & Routes*. À faire **avant d'imprimer les QR codes** : ils contiennent l'adresse complète.
+
+### Modifier la base
+
+Après une modification de `src/db/schema.ts` :
+
+```bash
+npm run db:generate   # crée un fichier SQL dans migrations/
+npm run db:migrate    # l'applique à la base de production (wrangler d1 migrations apply)
+```
 
 ## Développement local
 
 ```bash
-cp .env.example .env   # puis remplir DATABASE_URL, etc.
 npm install
-npm run db:migrate
-npm run db:seed
-npm run dev
+cp .dev.vars.example .dev.vars   # mot de passe de la réception en local
+npm run db:migrate:local         # base D1 locale
+npm run dev                      # http://localhost:3000
+npm run preview                  # même chose dans le vrai runtime Workers
 ```
 
-Commandes utiles : `npm run typecheck`, `npm run lint`, `npm run db:generate` (après modification de `src/db/schema.ts`).
+Commandes utiles : `npm run typecheck`, `npm run lint`.
 
 ## Structure
 
@@ -93,10 +103,10 @@ src/
     api/reception/...           connexion, demandes, chambres et séjours, minibar, réglages
   components/                   GuestApp (client), ReceptionShell + pages réception, styles
   config/                       valeurs par défaut de l'hôtel, chambres, types de demandes
-  db/                           schéma Drizzle et connexion
+  db/                           schéma Drizzle et accès à D1
   i18n/                         traductions (une langue par fichier)
-drizzle/                        migrations SQL
-scripts/seed.ts                 création des chambres et de leurs jetons
+migrations/                     migrations SQL (D1)
+wrangler.jsonc                  configuration Cloudflare (Worker + base D1)
 ```
 
 ## Ajouter une langue

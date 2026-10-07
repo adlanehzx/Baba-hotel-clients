@@ -10,13 +10,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const roomId = (await params).id;
   const body = await req.json().catch(() => null);
 
-  const stay = await db.transaction(async (tx) => {
-    await tx
-      .update(stays)
-      .set({ checkedOutAt: new Date() })
-      .where(and(eq(stays.roomId, roomId), isNull(stays.checkedOutAt)));
-    const [s] = await tx.insert(stays).values({ roomId, breakfastIncluded: body?.breakfastIncluded === true }).returning();
-    return s;
-  });
-  return NextResponse.json(stay, { status: 201 });
+  const [, inserted] = await db.batch([
+    db.update(stays).set({ checkedOutAt: new Date() }).where(and(eq(stays.roomId, roomId), isNull(stays.checkedOutAt))),
+    db.insert(stays).values({ roomId, breakfastIncluded: body?.breakfastIncluded === true }).returning(),
+  ] as const);
+  return NextResponse.json(inserted[0], { status: 201 });
 }

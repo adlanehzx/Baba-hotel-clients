@@ -1,6 +1,6 @@
 /**
- * Chambres créées au premier `npm run db:seed`. Ensuite, elles se gèrent depuis
- * la réception (Réglages > Chambres).
+ * Chambres créées automatiquement à la première connexion de la réception.
+ * Ensuite, elles se gèrent depuis la réception (Réglages > Chambres).
  */
 export const ROOM_NUMBERS = [
   "01", "10", "11", "12", "14", "15",

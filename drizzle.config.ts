@@ -1,10 +1,9 @@
-import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
-import { normalizeDbUrl } from "./src/lib/db-url";
 
+// Génère les migrations SQL (dossier migrations/), appliquées ensuite avec
+//   npx wrangler d1 migrations apply DB --remote
 export default defineConfig({
   schema: "./src/db/schema.ts",
-  out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: { url: normalizeDbUrl(process.env.DATABASE_URL)! },
+  out: "./migrations",
+  dialect: "sqlite",
 });

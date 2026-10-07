@@ -11,15 +11,15 @@ const SESSION_DAYS = 30;
 
 /**
  * Clé de signature des sessions. Si SESSION_SECRET n'est pas défini, elle est
- * dérivée de l'URL de la base (qui contient son mot de passe et reste côté serveur) :
- * une variable de moins à configurer.
+ * dérivée du mot de passe de la réception : une variable de moins à configurer,
+ * et changer le mot de passe déconnecte tous les écrans.
  */
 function secret(): string {
   const s = process.env.SESSION_SECRET;
   if (s && s.length >= 32) return s;
-  const db = process.env.DATABASE_URL;
-  if (!db) throw new Error("SESSION_SECRET ou DATABASE_URL manquant");
-  return createHmac("sha256", db).update("baba-reception-session").digest("base64url");
+  const pw = process.env.RECEPTION_PASSWORD;
+  if (!pw) throw new Error("RECEPTION_PASSWORD manquant");
+  return createHmac("sha256", pw).update("baba-reception-session").digest("base64url");
 }
 
 function sign(value: string): string {

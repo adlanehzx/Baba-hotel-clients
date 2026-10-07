@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
 import { db, products, requests, type RequestDetails } from "@/db";
 import { findRoomByToken } from "@/lib/rooms";
 import { getSettings } from "@/lib/settings";
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json(created, { status: 201 });
   }
 
-  // Minibar : on réserve le stock dans la même transaction que la commande
+  // Minibar : on réserve le stock en même temps que la commande
   if (category === "minibar") {
     const wanted = new Map<string, number>();
     for (const it of Array.isArray(body?.items) ? body.items : []) {
@@ -63,29 +64,38 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
     if (!wanted.size) return bad("empty_order");
 
+    // On vérifie d'abord les produits et le stock…
+    const found = await db
+      .select({ id: products.id, name: products.name, price: products.price, stock: products.stock })
+      .from(products)
+      .where(and(inArray(products.id, [...wanted.keys()]), eq(products.active, true)));
+    const byId = new Map(found.map((p) => [p.id, p]));
+    const items: Extract<RequestDetails, { kind: "minibar" }>["items"] = [];
+    for (const [productId, qty] of wanted) {
+      const p = byId.get(productId);
+      if (!p || p.stock < qty) return bad("out_of_stock", 409);
+      items.push({ productId, name: p.name, price: p.price, qty });
+    }
+    const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
+
+    // …puis on décrémente le stock et on enregistre la commande en un seul lot
+    // (D1 exécute un batch comme une transaction). Si un autre client vient de
+    // prendre le dernier article, la contrainte « stock >= 0 » annule tout le lot.
     try {
-      const created = await db.transaction(async (tx) => {
-        const items: Extract<RequestDetails, { kind: "minibar" }>["items"] = [];
-        for (const [productId, qty] of wanted) {
-          // Décrément conditionnel : échoue si le stock est insuffisant ou le produit retiré
-          const [p] = await tx
-            .update(products)
-            .set({ stock: sql`${products.stock} - ${qty}` })
-            .where(and(eq(products.id, productId), eq(products.active, true), gte(products.stock, qty)))
-            .returning({ name: products.name, price: products.price });
-          if (!p) throw new Error("out_of_stock");
-          items.push({ productId, name: p.name, price: p.price, qty });
-        }
-        const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
-        const [row] = await tx
+      const statements = [
+        ...items.map((i) =>
+          db.update(products).set({ stock: sql`${products.stock} - ${i.qty}` }).where(eq(products.id, i.productId)),
+        ),
+        db
           .insert(requests)
           .values({ roomId: room.id, category, message: message || null, lang, details: { kind: "minibar", items, total } })
-          .returning(returning);
-        return row;
-      });
+          .returning(returning),
+      ];
+      const results = await db.batch(statements as unknown as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
+      const created = (results[results.length - 1] as { id: string }[])[0];
       return NextResponse.json(created, { status: 201 });
     } catch (e) {
-      if (e instanceof Error && e.message === "out_of_stock") return bad("out_of_stock", 409);
+      if (String((e as Error)?.message ?? e).includes("CHECK constraint")) return bad("out_of_stock", 409);
       throw e;
     }
   }
