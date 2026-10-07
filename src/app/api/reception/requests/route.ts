@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { and, desc, eq, gte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { db, requests, rooms } from "@/db";
-import { isReceptionLoggedIn } from "@/lib/auth";
+import { requireReception } from "@/lib/auth";
 
-/** File des demandes pour l'écran de la réception : en attente + traitées depuis 12 h. */
+/** File des demandes pour l'écran de la réception : en attente + terminées depuis 12 h. */
 export async function GET() {
-  if (!(await isReceptionLoggedIn())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const denied = await requireReception();
+  if (denied) return denied;
 
   const since = new Date(Date.now() - 12 * 3600_000);
   const rows = await db
@@ -14,6 +15,7 @@ export async function GET() {
       room: rooms.number,
       category: requests.category,
       message: requests.message,
+      details: requests.details,
       lang: requests.lang,
       status: requests.status,
       createdAt: requests.createdAt,
@@ -22,7 +24,12 @@ export async function GET() {
     })
     .from(requests)
     .innerJoin(rooms, eq(rooms.id, requests.roomId))
-    .where(or(ne(requests.status, "DONE"), and(eq(requests.status, "DONE"), gte(requests.doneAt, since))))
+    .where(
+      or(
+        inArray(requests.status, ["NEW", "IN_PROGRESS"]),
+        and(inArray(requests.status, ["DONE", "CANCELLED"]), gte(requests.doneAt, since)),
+      ),
+    )
     .orderBy(desc(requests.createdAt))
     .limit(200);
 

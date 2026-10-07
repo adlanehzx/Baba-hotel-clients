@@ -49,3 +49,9 @@ export async function isReceptionLoggedIn(): Promise<boolean> {
   const store = await cookies();
   return isValidSession(store.get(SESSION_COOKIE)?.value);
 }
+
+/** Pour les routes API de la réception : renvoie une réponse 401 si non connecté. */
+export async function requireReception(): Promise<Response | null> {
+  if (await isReceptionLoggedIn()) return null;
+  return Response.json({ error: "unauthorized" }, { status: 401 });
+}

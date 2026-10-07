@@ -2,10 +2,22 @@
 
 Chaque chambre a son QR code. En le scannant, le client arrive sur une page dans sa langue :
 
-- **Questions fréquentes** : Wi-Fi (avec bouton copier), petit-déjeuner, départ, réception, transports, quartier, urgences.
-- **Demande à la réception** : serviettes, produits d'accueil, ménage, problème dans la chambre, départ tardif, taxi, ou message libre. Le client suit ensuite l'état de sa demande (envoyée → prise en charge → traitée).
+- **Horaires** : check-in, check-out, petit-déjeuner (avec « inclus dans votre réservation » si la réception l'a coché au check-in, sinon le prix par personne), réception 24h/24.
+- **Questions fréquentes** : Wi-Fi (avec bouton copier), petit-déjeuner, départ et départ tardif, réception, bagagerie, transports, quartier, urgences.
+- **Demande à la réception** : serviettes, produits d'accueil, ménage, problème dans la chambre, taxi, message libre, ou **départ tardif** (le client choisit l'heure, le supplément s'affiche). Le client suit ensuite l'état de sa demande.
+- **Minibar** : le client commande, le stock est réservé, il vient chercher sa commande à la réception.
 
-À la réception, l'**écran de suivi** (`/reception`) affiche les demandes en direct, avec le numéro de chambre, un signal sonore et un lien « Traduire » pour les messages en langue étrangère.
+Côté **réception** (mot de passe), cinq pages :
+
+| Page | Rôle |
+|---|---|
+| Demandes | Les demandes en direct (Nouvelles / En cours / Terminées), signal sonore, lien « Traduire ». Départ tardif : Accepter / Refuser. Minibar : Commande prête / Récupérée / Annuler (le stock revient). |
+| Chambres | Check-in (avec « petit-déj offert » pour les réservations du site officiel) et check-out. |
+| Minibar | Produits, prix, stock (+/−), visibilité côté client. |
+| Réglages | Wi-Fi, horaires, prix du petit-déjeuner, départ tardif (tarif horaire et heure max), téléphone, adresse, liste des chambres. |
+| QR codes | Planche à imprimer, une étiquette par chambre. |
+
+Le signal sonore et le compteur de nouvelles demandes marchent quelle que soit la page ouverte.
 
 **12 langues** : français, anglais, espagnol, allemand, italien, portugais, néerlandais, arabe (de droite à gauche), chinois, japonais, coréen, russe. La langue du téléphone est détectée automatiquement et le client peut en changer.
 
@@ -18,16 +30,27 @@ Next.js 16 (App Router), PostgreSQL, Drizzle ORM. Déploiement prévu sur Vercel
 | URL | Pour qui | Contenu |
 |---|---|---|
 | `/r/<jeton>` | Client (via QR code) | FAQ + formulaire de demande |
-| `/reception` | Réception (mot de passe) | Demandes en direct : Nouvelles / En cours / Traitées |
+| `/reception` | Réception (mot de passe) | Demandes en direct |
+| `/reception/chambres` | Réception | Check-in / check-out, petit-déjeuner offert |
+| `/reception/minibar` | Réception | Produits et stock |
+| `/reception/reglages` | Réception | Informations de l'hôtel et chambres |
 | `/reception/qr` | Réception | Planche de QR codes à imprimer (A4, 9 par page) |
 
 Le jeton du QR code est aléatoire : impossible de deviner l'adresse d'une autre chambre. Chaque chambre est limitée à 8 demandes par heure pour éviter les abus.
 
-## À compléter avant la mise en service
+## Données de l'hôtel
 
-1. **`src/config/hotel.ts`** : nom et mot de passe du Wi-Fi, horaires du petit-déjeuner (marqués `TODO`).
-2. **`src/config/rooms.ts`** : les vrais numéros des 16 chambres.
-3. Relire les textes de la FAQ dans `src/i18n/messages/fr.ts`. Les autres langues sont dans le même dossier.
+Tout se règle depuis la réception (page Réglages) : rien à modifier dans le code. Les valeurs de départ sont dans `src/config/hotel.ts` :
+
+- Chambres : 01, 10, 11, 12, 14, 15, 20, 21, 22, 23, 24, 30, 31, 32, 33, 34
+- Check-in 14:00, check-out 11:00
+- Petit-déjeuner de 07:30 à 11:00, 12 € par personne (offert pour les réservations du site officiel, à cocher au check-in)
+- Départ tardif : 10 € par heure, jusqu'à 13:30 maximum. Créneaux proposés toutes les 30 min, au prorata (11:30 = 5 €, 12:00 = 10 €… 13:30 = 25 €)
+- Bagagerie à la réception
+
+À faire après la mise en ligne : renseigner le **mot de passe Wi-Fi** dans Réglages et **ajouter les produits du minibar**.
+
+Les textes des questions fréquentes sont traduits dans `src/i18n/messages/` (un fichier par langue) ; les valeurs (heures, prix, Wi-Fi…) y sont insérées automatiquement.
 
 ## Déployer sur Vercel + Neon
 
@@ -65,12 +88,12 @@ Commandes utiles : `npm run typecheck`, `npm run lint`, `npm run db:generate` (a
 src/
   app/
     r/[token]/page.tsx          page client
-    reception/page.tsx          écran réception (connexion + tableau)
-    reception/qr/page.tsx       planche de QR codes
+    reception/layout.tsx        connexion + barre de navigation de la réception
+    reception/...               demandes, chambres, minibar, réglages, QR codes
     api/r/[token]/requests      envoi et suivi des demandes (client)
-    api/reception/...           connexion, liste, changement de statut
-  components/                   GuestApp, ReceptionBoard, styles
-  config/                       infos hôtel, chambres, types de demandes
+    api/reception/...           connexion, demandes, chambres et séjours, minibar, réglages
+  components/                   GuestApp (client), ReceptionShell + pages réception, styles
+  config/                       valeurs par défaut de l'hôtel, chambres, types de demandes
   db/                           schéma Drizzle et connexion
   i18n/                         traductions (une langue par fichier)
 drizzle/                        migrations SQL

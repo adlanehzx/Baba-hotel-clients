@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { db, rooms } from "@/db";
 import { isReceptionLoggedIn } from "@/lib/auth";
+import { byRoomNumber } from "@/lib/rooms";
 import PrintButton from "@/components/PrintButton";
 import styles from "@/components/reception.module.css";
 
@@ -18,15 +18,11 @@ async function baseUrl() {
   return `${proto}://${host}`;
 }
 
-/** Tri naturel des numéros de chambre : 2 avant 10, « 12b » après « 12 ». */
-const byNumber = (a: { number: string }, b: { number: string }) =>
-  a.number.localeCompare(b.number, "fr", { numeric: true });
-
 export default async function QrPage() {
-  if (!(await isReceptionLoggedIn())) redirect("/reception");
+  if (!(await isReceptionLoggedIn())) return null; // le layout affiche la connexion
 
   const [base, list] = await Promise.all([baseUrl(), db.select().from(rooms)]);
-  list.sort(byNumber);
+  list.sort(byRoomNumber);
 
   const cards = await Promise.all(
     list.map(async (room) => ({
@@ -41,17 +37,16 @@ export default async function QrPage() {
   );
 
   return (
-    <main className={styles.qrPage}>
+    <div className={styles.qrPage}>
       <div className={styles.qrBar}>
         <div>
-          <h1 className="serif">QR codes des chambres</h1>
+          <h2 className="serif">QR codes des chambres</h2>
           <p>
             Un code par chambre : il ouvre la page d&apos;aide avec le numéro de chambre déjà rempli.
             Imprimez sur A4 (9 étiquettes par page) et découpez le long des pointillés.
           </p>
         </div>
         <div className={styles.barActions}>
-          <a className={styles.ghost} href="/reception">Retour</a>
           <PrintButton className={styles.primary} />
         </div>
       </div>
@@ -79,6 +74,6 @@ export default async function QrPage() {
           </article>
         ))}
       </div>
-    </main>
+    </div>
   );
 }

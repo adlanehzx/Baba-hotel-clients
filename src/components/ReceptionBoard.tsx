@@ -1,31 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { CATEGORY_LABELS_FR, type Category } from "@/config/requests";
+import { useEffect, useState } from "react";
+import { CATEGORY_LABELS_FR } from "@/config/requests";
+import { formatPrice } from "@/lib/time";
+import { useRequests, type Row, type Status } from "./ReceptionShell";
 import styles from "./reception.module.css";
 
-type Status = "NEW" | "IN_PROGRESS" | "DONE";
-type Row = {
-  id: string;
-  room: string;
-  category: Category;
-  message: string | null;
-  lang: string;
-  status: Status;
-  createdAt: string;
-  updatedAt: string;
-  doneAt: string | null;
-};
-
-const POLL_MS = 4000;
 const LATE_MIN = 10; // une demande non prise en charge depuis 10 min passe en alerte
 
-const COLUMNS: { status: Status; title: string; empty: string }[] = [
-  { status: "NEW", title: "Nouvelles", empty: "Aucune nouvelle demande." },
-  { status: "IN_PROGRESS", title: "En cours", empty: "Rien en cours." },
-  { status: "DONE", title: "Traitées (12 h)", empty: "Aucune demande traitée récemment." },
+const COLUMNS: { key: string; statuses: Status[]; title: string; empty: string }[] = [
+  { key: "NEW", statuses: ["NEW"], title: "Nouvelles", empty: "Aucune nouvelle demande." },
+  { key: "IN_PROGRESS", statuses: ["IN_PROGRESS"], title: "En cours", empty: "Rien en cours." },
+  { key: "DONE", statuses: ["DONE", "CANCELLED"], title: "Terminées (12 h)", empty: "Aucune demande terminée récemment." },
 ];
+
+const eur = (cents: number) => formatPrice(cents, "fr-FR");
 
 function ago(iso: string, now: number) {
   const min = Math.floor((now - Date.parse(iso)) / 60000);
@@ -44,196 +33,167 @@ function langNameFr(code: string) {
   }
 }
 
-/** Petit carillon à deux notes, joué à l'arrivée d'une demande. */
-function chime(ctx: AudioContext) {
-  const t0 = ctx.currentTime;
-  [880, 1318.5].forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    const t = t0 + i * 0.18;
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.25, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 1);
-  });
+/** Boutons proposés selon le type de demande et son statut. */
+function actionsFor(r: Row): { to: Status; label: string; primary?: boolean }[] {
+  if (r.status === "CANCELLED") return [];
+  if (r.category === "minibar") {
+    if (r.status === "NEW") return [{ to: "IN_PROGRESS", label: "Commande prête", primary: true }, { to: "CANCELLED", label: "Annuler la commande" }];
+    if (r.status === "IN_PROGRESS") return [{ to: "DONE", label: "Récupérée par le client", primary: true }, { to: "CANCELLED", label: "Annuler la commande" }];
+    return [];
+  }
+  if (r.category === "lateCheckout") {
+    if (r.status === "DONE") return [];
+    return [{ to: "DONE", label: "Accepter", primary: true }, { to: "CANCELLED", label: "Refuser" }];
+  }
+  if (r.status === "NEW") return [{ to: "IN_PROGRESS", label: "Prendre en charge", primary: true }, { to: "DONE", label: "Marquer comme traitée" }];
+  if (r.status === "IN_PROGRESS") return [{ to: "DONE", label: "Marquer comme traitée", primary: true }];
+  return [{ to: "IN_PROGRESS", label: "Rouvrir" }];
 }
 
+const endLabel = (r: Row) => {
+  if (r.status === "CANCELLED") return r.category === "lateCheckout" ? "Refusée" : "Annulée";
+  if (r.category === "minibar") return "Récupérée";
+  if (r.category === "lateCheckout") return "Acceptée";
+  return "Traitée";
+};
+
 export default function ReceptionBoard() {
-  const router = useRouter();
-  const [rows, setRows] = useState<Row[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [offline, setOffline] = useState(false);
+  const { rows, loaded, fresh, reload, setRows } = useRequests();
   const [now, setNow] = useState(() => Date.now());
-  const [soundOn, setSoundOn] = useState(false);
-  const [fresh, setFresh] = useState<Set<string>>(new Set());
-  const known = useRef<Set<string> | null>(null);
-  const audio = useRef<AudioContext | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch("/api/reception/requests", { cache: "no-store" });
-      if (res.status === 401) return router.refresh();
-      if (!res.ok) throw new Error();
-      const data: Row[] = await res.json();
-      setOffline(false);
-
-      // Repère les demandes arrivées depuis le dernier passage
-      const ids = new Set(data.map((r) => r.id));
-      if (known.current) {
-        const arrived = data.filter((r) => !known.current!.has(r.id) && r.status === "NEW").map((r) => r.id);
-        if (arrived.length) {
-          setFresh((prev) => new Set([...prev, ...arrived]));
-          if (audio.current) chime(audio.current);
-          setTimeout(() => setFresh((prev) => {
-            const next = new Set(prev);
-            arrived.forEach((id) => next.delete(id));
-            return next;
-          }), 6000);
-        }
-      }
-      known.current = ids;
-      setRows(data);
-      setLoaded(true);
-    } catch {
-      setOffline(true);
-    }
-  }, [router]);
+  const [confirm, setConfirm] = useState<string | null>(null); // id en attente de confirmation d'annulation
 
   useEffect(() => {
-    // load() est asynchrone : l'état n'est mis à jour qu'après la réponse du serveur
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-    const poll = setInterval(load, POLL_MS);
     const tick = setInterval(() => setNow(Date.now()), 30_000);
-    return () => {
-      clearInterval(poll);
-      clearInterval(tick);
-    };
-  }, [load]);
-
-  const newCount = rows.filter((r) => r.status === "NEW").length;
-  useEffect(() => {
-    document.title = newCount ? `(${newCount}) Réception — Baba Hotel` : "Réception — Baba Hotel";
-  }, [newCount]);
-
-  const enableSound = () => {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    audio.current = new Ctx();
-    chime(audio.current);
-    setSoundOn(true);
-  };
+    return () => clearInterval(tick);
+  }, []);
 
   const setStatus = async (id: string, status: Status) => {
+    setConfirm(null);
     // Mise à jour immédiate à l'écran, corrigée au prochain rafraîchissement si besoin
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status, doneAt: status === "DONE" ? new Date().toISOString() : null } : r)));
+    const end = status === "DONE" || status === "CANCELLED";
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status, doneAt: end ? new Date().toISOString() : null } : r)));
     await fetch(`/api/reception/requests/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     }).catch(() => null);
-    load();
-  };
-
-  const logout = async () => {
-    await fetch("/api/reception/logout", { method: "POST" });
-    router.refresh();
+    reload();
   };
 
   return (
-    <div className={styles.board}>
-      <header className={styles.bar}>
-        <h1 className="serif">Réception <span>Baba Hotel</span></h1>
-        <div className={styles.barActions}>
-          {offline && <span className={styles.offline} role="status">Connexion perdue, nouvel essai…</span>}
-          {soundOn ? (
-            <span className={styles.soundOn}>Son activé</span>
-          ) : (
-            <button className={styles.primary} onClick={enableSound}>Activer le son</button>
-          )}
-          <a className={styles.ghost} href="/reception/qr">QR codes</a>
-          <button className={styles.ghost} onClick={logout}>Se déconnecter</button>
-        </div>
-      </header>
+    <div className={styles.columns}>
+      {COLUMNS.map((col) => {
+        const list = rows.filter((r) => col.statuses.includes(r.status));
+        if (col.key === "DONE") list.sort((a, b) => Date.parse(b.doneAt ?? b.updatedAt) - Date.parse(a.doneAt ?? a.updatedAt));
+        else list.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)); // les plus anciennes d'abord
+        return (
+          <section key={col.key} className={styles.column} data-status={col.key} aria-labelledby={`col-${col.key}`}>
+            <h2 id={`col-${col.key}`}>
+              {col.title} <span className={styles.count}>{list.length}</span>
+            </h2>
+            {loaded && !list.length && <p className={styles.empty}>{col.empty}</p>}
+            <ul>
+              {list.map((r) => {
+                const late = r.status === "NEW" && now - Date.parse(r.createdAt) > LATE_MIN * 60000;
+                return (
+                  <li
+                    key={r.id}
+                    className={styles.card}
+                    data-fresh={fresh.has(r.id) || undefined}
+                    data-late={late || undefined}
+                    data-cancelled={r.status === "CANCELLED" || undefined}
+                  >
+                    <div className={styles.cardHead}>
+                      <span className={`${styles.room} serif`}>
+                        <small>Ch.</small> {r.room}
+                      </span>
+                      <span className={styles.time} title={new Date(r.createdAt).toLocaleString("fr-FR")}>
+                        {ago(r.createdAt, now)}
+                      </span>
+                    </div>
+                    <p className={styles.cat}>
+                      {CATEGORY_LABELS_FR[r.category] ?? r.category}
+                      {col.key === "DONE" && <span className={styles.endTag}>{endLabel(r)}</span>}
+                    </p>
 
-      {!soundOn && (
-        <p className={styles.hint}>
-          Cliquez sur « Activer le son » pour entendre un signal à chaque nouvelle demande. Laissez cette page ouverte.
-        </p>
-      )}
+                    {r.details?.kind === "lateCheckout" && (
+                      <p className={styles.detail}>
+                        Départ à <strong>{r.details.time}</strong> · supplément {eur(r.details.price)}
+                      </p>
+                    )}
+                    {r.details?.kind === "minibar" && (
+                      <table className={styles.order}>
+                        <tbody>
+                          {r.details.items.map((i) => (
+                            <tr key={i.productId}>
+                              <td>{i.qty} ×</td>
+                              <td>{i.name}</td>
+                              <td>{eur(i.price * i.qty)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr>
+                            <td colSpan={2}>Total</td>
+                            <td>{eur(r.details.total)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    )}
 
-      <div className={styles.columns}>
-        {COLUMNS.map((col) => {
-          const list = rows.filter((r) => r.status === col.status);
-          if (col.status === "DONE") list.sort((a, b) => Date.parse(b.doneAt ?? b.updatedAt) - Date.parse(a.doneAt ?? a.updatedAt));
-          else list.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)); // les plus anciennes d'abord
-          return (
-            <section key={col.status} className={styles.column} data-status={col.status} aria-labelledby={`col-${col.status}`}>
-              <h2 id={`col-${col.status}`}>
-                {col.title} <span className={styles.count}>{list.length}</span>
-              </h2>
-              {loaded && !list.length && <p className={styles.empty}>{col.empty}</p>}
-              <ul>
-                {list.map((r) => {
-                  const late = r.status === "NEW" && now - Date.parse(r.createdAt) > LATE_MIN * 60000;
-                  const langName = langNameFr(r.lang);
-                  return (
-                    <li key={r.id} className={styles.card} data-fresh={fresh.has(r.id) || undefined} data-late={late || undefined}>
-                      <div className={styles.cardHead}>
-                        <span className={`${styles.room} serif`}>
-                          <small>Ch.</small> {r.room}
-                        </span>
-                        <span className={styles.time} title={new Date(r.createdAt).toLocaleString("fr-FR")}>
-                          {ago(r.createdAt, now)}
-                        </span>
-                      </div>
-                      <p className={styles.cat}>{CATEGORY_LABELS_FR[r.category] ?? r.category}</p>
-                      {r.message && (
-                        <blockquote className={styles.msg} lang={r.lang}>
-                          {r.message}
-                        </blockquote>
-                      )}
-                      {r.lang !== "fr" && (
-                        <p className={styles.lang}>
-                          Client en {langName}
-                          {r.message && (
-                            <>
-                              {" · "}
-                              <a
-                                href={`https://translate.google.com/?sl=auto&tl=fr&op=translate&text=${encodeURIComponent(r.message)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              >
-                                Traduire
-                              </a>
-                            </>
-                          )}
-                        </p>
-                      )}
-                      <div className={styles.actions}>
-                        {r.status === "NEW" && (
-                          <button className={styles.primary} onClick={() => setStatus(r.id, "IN_PROGRESS")}>Prendre en charge</button>
+                    {r.message && (
+                      <blockquote className={styles.msg} lang={r.lang}>
+                        {r.message}
+                      </blockquote>
+                    )}
+                    {r.lang !== "fr" && (
+                      <p className={styles.lang}>
+                        Client en {langNameFr(r.lang)}
+                        {r.message && (
+                          <>
+                            {" · "}
+                            <a
+                              href={`https://translate.google.com/?sl=auto&tl=fr&op=translate&text=${encodeURIComponent(r.message)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              Traduire
+                            </a>
+                          </>
                         )}
-                        {r.status !== "DONE" && (
-                          <button className={r.status === "NEW" ? styles.ghost : styles.primary} onClick={() => setStatus(r.id, "DONE")}>
-                            Marquer comme traitée
+                      </p>
+                    )}
+
+                    <div className={styles.actions}>
+                      {confirm === r.id ? (
+                        <>
+                          <span className={styles.confirmText}>
+                            {r.category === "minibar" ? "Annuler cette commande ? Les articles reviennent en stock." : "Confirmer ?"}
+                          </span>
+                          <button className={styles.danger} onClick={() => setStatus(r.id, "CANCELLED")}>
+                            Oui, {r.category === "lateCheckout" ? "refuser" : "annuler"}
                           </button>
-                        )}
-                        {r.status === "DONE" && (
-                          <button className={styles.ghost} onClick={() => setStatus(r.id, "IN_PROGRESS")}>Rouvrir</button>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          );
-        })}
-      </div>
+                          <button className={styles.ghost} onClick={() => setConfirm(null)}>Non</button>
+                        </>
+                      ) : (
+                        actionsFor(r).map((a) => (
+                          <button
+                            key={a.to}
+                            className={a.primary ? styles.primary : styles.ghost}
+                            onClick={() => (a.to === "CANCELLED" ? setConfirm(r.id) : setStatus(r.id, a.to))}
+                          >
+                            {a.label}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }

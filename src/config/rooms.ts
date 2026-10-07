@@ -1,9 +1,9 @@
 /**
- * Numéros des chambres. Utilisé par `npm run db:seed` pour créer une chambre
- * (et son QR code) par numéro. TODO : remplacer par les vrais numéros.
- * Relancer le seed après modification : les chambres existantes gardent leur QR code.
+ * Chambres créées au premier `npm run db:seed`. Ensuite, elles se gèrent depuis
+ * la réception (Réglages > Chambres).
  */
 export const ROOM_NUMBERS = [
-  "1", "2", "3", "4", "5", "6", "7", "8",
-  "9", "10", "11", "12", "13", "14", "15", "16",
+  "01", "10", "11", "12", "14", "15",
+  "20", "21", "22", "23", "24",
+  "30", "31", "32", "33", "34",
 ];
