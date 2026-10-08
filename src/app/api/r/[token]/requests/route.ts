@@ -70,14 +70,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     // On vérifie d'abord les produits et le stock…
     const found = await db
-      .select({ id: products.id, name: products.name, price: products.price, stock: products.stock })
+      .select({ id: products.id, name: products.name, price: products.price, stock: products.stock, unlimited: products.unlimited })
       .from(products)
       .where(and(inArray(products.id, [...wanted.keys()]), eq(products.active, true)));
     const byId = new Map(found.map((p) => [p.id, p]));
     const items: Extract<RequestDetails, { kind: "minibar" }>["items"] = [];
     for (const [productId, qty] of wanted) {
       const p = byId.get(productId);
-      if (!p || p.stock < qty) return bad("out_of_stock", 409);
+      if (!p || (!p.unlimited && p.stock < qty)) return bad("out_of_stock", 409);
       items.push({ productId, name: p.name, price: p.price, qty });
     }
     const total = items.reduce((sum, i) => sum + i.price * i.qty, 0);
@@ -87,7 +87,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     // prendre le dernier article, la contrainte « stock >= 0 » annule tout le lot.
     try {
       const statements = [
-        ...items.map((i) =>
+        // Les produits à stock illimité (café, thé…) ne sont jamais décomptés.
+        ...items.filter((i) => !byId.get(i.productId)?.unlimited).map((i) =>
           db.update(products).set({ stock: sql`${products.stock} - ${i.qty}` }).where(eq(products.id, i.productId)),
         ),
         db

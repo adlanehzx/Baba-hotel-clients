@@ -30,7 +30,7 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
     getSettings(),
     currentStay(room.id),
     db
-      .select({ id: products.id, name: products.name, nameEn: products.nameEn, price: products.price, stock: products.stock })
+      .select({ id: products.id, name: products.name, nameEn: products.nameEn, price: products.price, stock: products.stock, unlimited: products.unlimited })
       .from(products)
       .where(eq(products.active, true))
       .orderBy(asc(products.name)),
@@ -45,7 +45,8 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
       metro={METRO_STATION}
       breakfastIncluded={stay?.breakfastIncluded ?? false}
       checkedIn={!!stay}
-      products={minibar}
+      // Stock illimité : toujours disponible pour le client (le nombre restant n'est jamais affiché).
+      products={minibar.map(({ unlimited, ...p }) => (unlimited ? { ...p, stock: 999 } : p))}
     />
   );
 }

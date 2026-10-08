@@ -79,6 +79,10 @@ export const products = sqliteTable(
     nameEn: text("name_en"),
     price: integer("price").notNull(),
     stock: integer("stock").notNull().default(0),
+    /** Stock illimité (ex. café, thé) : jamais épuisé, jamais décompté. */
+    unlimited: integer("unlimited", { mode: "boolean" }).notNull().default(false),
+    /** Seuil d'alerte côté réception (Relais) : stock <= seuil → à réapprovisionner. 0 = pas d'alerte. */
+    alertAt: integer("alert_at").notNull().default(0),
     active: integer("active", { mode: "boolean" }).notNull().default(true),
     createdAt: ts("created_at").notNull().$defaultFn(now),
   },
