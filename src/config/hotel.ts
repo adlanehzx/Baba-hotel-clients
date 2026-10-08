@@ -15,6 +15,8 @@ export type HotelSettings = {
   lateCheckoutHourly: number; // en centimes, par heure supplémentaire
   phone: string;
   address: string;
+  /** Lien « Laisser un avis » Google de l'hôtel, proposé aux clients ayant réservé en direct ("" = pas proposé). */
+  googleReviewUrl: string;
 };
 
 export const DEFAULT_SETTINGS: HotelSettings = {
@@ -29,6 +31,7 @@ export const DEFAULT_SETTINGS: HotelSettings = {
   lateCheckoutHourly: 1000,
   phone: "+33 1 81 70 17 27",
   address: "15 rue du Roi d'Alger, 75018 Paris",
+  googleReviewUrl: "",
 };
 
 export const METRO_STATION = "Simplon";

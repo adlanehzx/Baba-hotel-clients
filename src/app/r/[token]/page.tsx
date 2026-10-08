@@ -45,6 +45,7 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
       metro={METRO_STATION}
       breakfastIncluded={stay?.breakfastIncluded ?? false}
       checkedIn={!!stay}
+      source={stay?.source ?? ""}
       // Stock illimité : toujours disponible pour le client (le nombre restant n'est jamais affiché).
       products={minibar.map(({ unlimited, ...p }) => (unlimited ? { ...p, stock: 999 } : p))}
     />

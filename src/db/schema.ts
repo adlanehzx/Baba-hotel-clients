@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createId } from "@/lib/id";
+import type { FeedbackTag } from "@/config/feedback";
 
 /** Dates stockées en millisecondes (entier), relues en objets Date. */
 const ts = (name: string) => integer(name, { mode: "timestamp_ms" });
@@ -30,6 +31,8 @@ export const stays = sqliteTable(
       .notNull()
       .references(() => rooms.id, { onDelete: "cascade" }),
     breakfastIncluded: integer("breakfast_included", { mode: "boolean" }).notNull().default(false),
+    /** Canal de réservation saisi au check-in : "direct" (site officiel), "booking", "expedia", "airbnb", "phone", "other" ou "". */
+    source: text("source").notNull().default(""),
     checkedInAt: ts("checked_in_at").notNull().$defaultFn(now),
     checkedOutAt: ts("checked_out_at"),
   },
@@ -89,6 +92,40 @@ export const products = sqliteTable(
   (t) => [check("products_stock_non_negative", sql`${t.stock} >= 0`)],
 );
 
+export { FEEDBACK_TAGS, type FeedbackTag } from "@/config/feedback";
+
+/**
+ * Avis du client pendant son séjour (un seul par séjour, modifiable).
+ * L'e-mail est facultatif ; les deux usages ont chacun leur consentement :
+ * envoi de la facture / du reçu, et offres de l'hôtel (case jamais pré-cochée).
+ */
+export const feedback = sqliteTable(
+  "feedback",
+  {
+    id: text("id").primaryKey().$defaultFn(createId),
+    stayId: text("stay_id")
+      .notNull()
+      .unique()
+      .references(() => stays.id, { onDelete: "cascade" }),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    rating: integer("rating"),
+    liked: text("liked", { mode: "json" }).notNull().$type<FeedbackTag[]>().default([]),
+    disliked: text("disliked", { mode: "json" }).notNull().$type<FeedbackTag[]>().default([]),
+    comment: text("comment"),
+    email: text("email"),
+    wantsReceipt: integer("wants_receipt", { mode: "boolean" }).notNull().default(false),
+    marketing: integer("marketing", { mode: "boolean" }).notNull().default(false),
+    /** Date du consentement aux offres (preuve RGPD), vide si refusé. */
+    marketingAt: ts("marketing_at"),
+    lang: text("lang").notNull(),
+    createdAt: ts("created_at").notNull().$defaultFn(now),
+    updatedAt: ts("updated_at").notNull().$defaultFn(now).$onUpdate(now),
+  },
+  (t) => [index("feedback_created_idx").on(t.createdAt), check("feedback_rating_range", sql`${t.rating} IS NULL OR (${t.rating} BETWEEN 1 AND 5)`)],
+);
+
 /** Réglages de l'hôtel modifiables à la réception (une seule ligne, id = "hotel"). */
 export const settings = sqliteTable("settings", {
   id: text("id").primaryKey(),
@@ -100,3 +137,4 @@ export type Room = typeof rooms.$inferSelect;
 export type Stay = typeof stays.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type GuestRequest = typeof requests.$inferSelect;
+export type Feedback = typeof feedback.$inferSelect;

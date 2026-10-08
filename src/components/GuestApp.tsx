@@ -5,6 +5,7 @@ import { MESSAGES, LOCALES, fill, isLocale, type Locale, type Messages } from "@
 import { CATEGORIES, MAX_MESSAGE_LENGTH, MAX_QTY_PER_ITEM, MESSAGE_REQUIRED, type Category } from "@/config/requests";
 import type { HotelSettings } from "@/config/hotel";
 import type { RequestDetails } from "@/db/schema";
+import { FEEDBACK_TAGS, type FeedbackTag } from "@/config/feedback";
 import { formatPrice, lateCheckoutOptions } from "@/lib/time";
 import styles from "./guest.module.css";
 
@@ -19,6 +20,8 @@ type Props = {
   products: Product[];
   /** Séjour enregistré par la réception (check-in dans Relais) : sinon pas de demandes ni de minibar. */
   checkedIn: boolean;
+  /** Canal de réservation saisi au check-in (invitation à laisser un avis public adaptée). */
+  source: string;
 };
 
 type Status = "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED";
@@ -82,7 +85,7 @@ function stepsFor(category: Category, t: Messages): { status: Status; label: str
   ];
 }
 
-export default function GuestApp({ token, room, initialLocale, settings, metro, breakfastIncluded, products, checkedIn }: Props) {
+export default function GuestApp({ token, room, initialLocale, settings, metro, breakfastIncluded, products, checkedIn, source }: Props) {
   // Passe à false si la réception fait le check-out pendant que la page est ouverte.
   const [open, setOpen] = useState(checkedIn);
   const [locale, setLocale] = useState<Locale>(initialLocale);
@@ -505,6 +508,9 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
             </div>
           )}
         </section>
+
+        {/* ---------- Avis ---------- */}
+        <FeedbackSection token={token} t={t} locale={locale} source={source} reviewUrl={settings.googleReviewUrl} onClosed={() => setOpen(false)} />
         </>)}
       </main>
 
@@ -581,5 +587,130 @@ function CopyValue({ value, t }: { value: string; t: Messages }) {
         {done ? t.ui.copied : t.ui.copy}
       </button>
     </>
+  );
+}
+
+const PLATFORMS: Record<string, string> = { booking: "Booking.com", expedia: "Expedia", airbnb: "Airbnb" };
+type FeedbackForm = { rating: number | null; liked: FeedbackTag[]; disliked: FeedbackTag[]; comment: string; email: string; wantsReceipt: boolean; marketing: boolean };
+const EMPTY_FEEDBACK: FeedbackForm = { rating: null, liked: [], disliked: [], comment: "", email: "", wantsReceipt: false, marketing: false };
+const EMAIL_RE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
+
+/**
+ * Avis du client : note, points forts / à améliorer, commentaire, e-mail facultatif
+ * avec deux consentements distincts. Après l'envoi, la même invitation à laisser
+ * un avis public est proposée à tous, quelle que soit la note, selon le site de
+ * réservation (Booking, Expedia… envoient leur propre e-mail ; en direct : Google).
+ */
+function FeedbackSection({ token, t, locale, source, reviewUrl, onClosed }: { token: string; t: Messages; locale: Locale; source: string; reviewUrl: string; onClosed: () => void }) {
+  const [form, setForm] = useState<FeedbackForm>(EMPTY_FEEDBACK);
+  const [saved, setSaved] = useState(false);
+  const [state, setState] = useState<"idle" | "sending" | "error" | "email" | "empty">("idle");
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/r/${token}/feedback`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { feedback: FeedbackForm | null } | null) => {
+        if (alive && d?.feedback) {
+          setForm({ ...EMPTY_FEEDBACK, ...d.feedback });
+          setSaved(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  const toggle = (key: "liked" | "disliked", tag: FeedbackTag) =>
+    setForm((f) => ({ ...f, [key]: f[key].includes(tag) ? f[key].filter((x) => x !== tag) : [...f[key], tag] }));
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const email = form.email.trim();
+    if (email && !EMAIL_RE.test(email)) return setState("email");
+    if (form.rating === null && !form.liked.length && !form.disliked.length && !form.comment.trim() && !email) return setState("empty");
+    setState("sending");
+    try {
+      const r = await fetch(`/api/r/${token}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, email, lang: locale }),
+      });
+      if (r.status === 403) return onClosed();
+      if (!r.ok) return setState(r.status === 400 ? "email" : "error");
+      setSaved(true);
+      setState("idle");
+    } catch {
+      setState("error");
+    }
+  };
+
+  const platform = PLATFORMS[source];
+  return (
+    <section aria-labelledby="fb-t" className={styles.feedback}>
+      <h2 id="fb-t" className={`${styles.askTitle} serif`}>{t.ui.fbTitle}</h2>
+      <p className={styles.askIntro}>{t.ui.fbIntro}</p>
+
+      {saved && state === "idle" && (
+        <>
+          <Sent title={t.ui.fbThanks} text={t.ui.fbThanksText} />
+          {platform ? (
+            <p className={styles.reviewInvite}>{fill(t.ui.reviewPlatform, { platform })}</p>
+          ) : reviewUrl ? (
+            <p className={styles.reviewInvite}>
+              {t.ui.reviewGoogle}{" "}
+              <a className={styles.reviewBtn} href={reviewUrl} target="_blank" rel="noopener noreferrer">{t.ui.reviewGoogleBtn}</a>
+            </p>
+          ) : null}
+        </>
+      )}
+
+      <form className={styles.fbForm} onSubmit={submit} noValidate>
+        <fieldset className={styles.fbGroup}>
+          <legend className={styles.label}>{t.ui.fbRating}</legend>
+          <div className={styles.stars} role="radiogroup" aria-label={t.ui.fbRating}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button key={n} type="button" role="radio" aria-checked={form.rating === n} aria-label={fill(t.ui.fbStar, { n: String(n) })}
+                data-on={form.rating !== null && n <= form.rating ? "" : undefined}
+                onClick={() => setForm((f) => ({ ...f, rating: f.rating === n ? null : n }))}>
+                <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z" /></svg>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        {(["liked", "disliked"] as const).map((key) => (
+          <fieldset key={key} className={styles.fbGroup}>
+            <legend className={styles.label}>{key === "liked" ? t.ui.fbLiked : t.ui.fbDisliked}</legend>
+            <div className={styles.chips}>
+              {FEEDBACK_TAGS.map((tag) => (
+                <button key={tag} type="button" aria-pressed={form[key].includes(tag)} className={styles.chip} data-kind={key} onClick={() => toggle(key, tag)}>
+                  {t.feedbackTags[tag]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+        <label className={styles.label} htmlFor="fb-comment">{t.ui.fbComment}</label>
+        <textarea id="fb-comment" className={styles.textarea} rows={3} maxLength={1000} placeholder={t.ui.fbCommentPlaceholder} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} />
+
+        <label className={styles.label} htmlFor="fb-email">{t.ui.fbEmail}</label>
+        <input id="fb-email" className={styles.input} type="email" inputMode="email" autoComplete="email" maxLength={254} value={form.email}
+          aria-invalid={state === "email" || undefined} onChange={(e) => { setForm({ ...form, email: e.target.value }); if (state === "email") setState("idle"); }} />
+        <p className={styles.note}>{t.ui.fbEmailHelp}</p>
+        {form.email.trim() && (
+          <div className={styles.consents}>
+            <label><input type="checkbox" checked={form.wantsReceipt} onChange={(e) => setForm({ ...form, wantsReceipt: e.target.checked })} /> {t.ui.fbReceipt}</label>
+            <label><input type="checkbox" checked={form.marketing} onChange={(e) => setForm({ ...form, marketing: e.target.checked })} /> {t.ui.fbMarketing}</label>
+          </div>
+        )}
+        {state === "email" && <p className={styles.fieldError} role="alert">{t.ui.fbEmailInvalid}</p>}
+        {state === "empty" && <p className={styles.fieldError} role="alert">{t.ui.fbEmpty}</p>}
+        {state === "error" && <p className={styles.fieldError} role="alert">{t.ui.error}</p>}
+        <button className={styles.send} type="submit" disabled={state === "sending"}>
+          {state === "sending" ? t.ui.sending : saved ? t.ui.fbUpdate : t.ui.fbSend}
+        </button>
+      </form>
+    </section>
   );
 }
