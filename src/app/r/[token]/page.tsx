@@ -6,6 +6,7 @@ import { getSettings } from "@/lib/settings";
 import { MESSAGES, pickLocale } from "@/i18n";
 import { METRO_STATION } from "@/config/hotel";
 import GuestApp from "@/components/GuestApp";
+import DeskCall from "@/components/DeskCall";
 import styles from "@/components/guest.module.css";
 
 /** Page ouverte en scannant le QR code d'une chambre. */
@@ -24,6 +25,12 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
         <p className={styles.callBtn}>{phone}</p>
       </main>
     );
+  }
+
+  // QR code du comptoir : prévenir la réception quand personne n'est là.
+  if (room.kind === "desk") {
+    const { phone } = await getSettings();
+    return <DeskCall token={token} initialLocale={locale} phone={phone} />;
   }
 
   const [settings, stay, minibar] = await Promise.all([

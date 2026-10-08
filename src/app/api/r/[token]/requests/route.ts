@@ -5,6 +5,7 @@ import { db, products, requests, type RequestDetails } from "@/db";
 import { currentStay, findRoomByToken } from "@/lib/rooms";
 import { getSettings } from "@/lib/settings";
 import { lateCheckoutOptions } from "@/lib/time";
+import { notifyReceptionLater } from "@/lib/push";
 import {
   ALL_CATEGORIES,
   MAX_MESSAGE_LENGTH,
@@ -25,7 +26,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   // Les demandes et le minibar ne sont ouverts que pendant un séjour enregistré
   // (check-in fait dans Relais) : un ancien client qui a gardé le lien ne peut
   // plus rien envoyer, ni commander depuis l'extérieur.
-  if (!(await currentStay(room.id))) return bad("not_checked_in", 403);
+  const desk = room.kind === "desk";
+  // QR code de la réception : ouvert à tous (client qui arrive, client sans chambre…), sans séjour.
+  if (!desk && !(await currentStay(room.id))) return bad("not_checked_in", 403);
 
   const body = await req.json().catch(() => null);
   const category = body?.category as Category;
@@ -33,6 +36,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const lang = isLocale(body?.lang) ? body.lang : "en";
 
   if (!ALL_CATEGORIES.includes(category)) return bad("invalid_category");
+  if (desk !== (category === "desk")) return bad("invalid_category");
   if (MESSAGE_REQUIRED.includes(category) && message.length < 2) return bad("message_required");
 
   const oneHourAgo = new Date(Date.now() - 3600_000);
@@ -40,9 +44,28 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     .select({ n: count() })
     .from(requests)
     .where(and(eq(requests.roomId, room.id), gte(requests.createdAt, oneHourAgo)));
-  if (n >= MAX_REQUESTS_PER_HOUR) return bad("rate_limited", 429);
+  if (n >= (desk ? 20 : MAX_REQUESTS_PER_HOUR)) return bad("rate_limited", 429);
 
   const returning = { id: requests.id, category: requests.category, status: requests.status, createdAt: requests.createdAt, details: requests.details };
+
+  if (desk) {
+    // Un appel encore ouvert depuis moins de 5 minutes : on le renvoie (un second appui ne relance pas tout le monde).
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000);
+    const [open] = await db
+      .select(returning)
+      .from(requests)
+      .where(and(eq(requests.roomId, room.id), eq(requests.status, "NEW"), gte(requests.createdAt, fiveMinutesAgo)))
+      .limit(1);
+    if (open) {
+      if (message) await db.update(requests).set({ message }).where(eq(requests.id, open.id));
+      // « Prévenir à nouveau » après une minute sans réponse : on relance les téléphones.
+      if (new Date(open.createdAt).getTime() < Date.now() - 60_000) notifyReceptionLater();
+      return NextResponse.json(open, { status: 200 });
+    }
+    const [created] = await db.insert(requests).values({ roomId: room.id, category, message: message || null, lang }).returning(returning);
+    notifyReceptionLater();
+    return NextResponse.json(created, { status: 201 });
+  }
 
   // Départ tardif : l'heure choisie doit faire partie des créneaux proposés
   if (category === "lateCheckout") {
@@ -54,6 +77,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       .insert(requests)
       .values({ roomId: room.id, category, message: message || null, lang, details })
       .returning(returning);
+    notifyReceptionLater();
     return NextResponse.json(created, { status: 201 });
   }
 
@@ -98,6 +122,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       ];
       const results = await db.batch(statements as unknown as [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]]);
       const created = (results[results.length - 1] as { id: string }[])[0];
+      notifyReceptionLater();
       return NextResponse.json(created, { status: 201 });
     } catch (e) {
       if (String((e as Error)?.message ?? e).includes("CHECK constraint")) return bad("out_of_stock", 409);
@@ -109,6 +134,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     .insert(requests)
     .values({ roomId: room.id, category, message: message || null, lang })
     .returning(returning);
+  notifyReceptionLater();
   return NextResponse.json(created, { status: 201 });
 }
 

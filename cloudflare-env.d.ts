@@ -4,8 +4,9 @@
 interface CloudflareEnv {
   DB: import("@cloudflare/workers-types").D1Database;
   ASSETS: import("@cloudflare/workers-types").Fetcher;
-  /** Mot de passe de l'écran réception (secret du Worker) */
-  RECEPTION_PASSWORD: string;
+  /** Notifications push vers les téléphones de la réception (secrets posés par le workflow de Relais) */
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_PUBLIC_KEY?: string;
   /** Facultatif : adresse publique utilisée dans les QR codes */
   PUBLIC_BASE_URL?: string;
 }

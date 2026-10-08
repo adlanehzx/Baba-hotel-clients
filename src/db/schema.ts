@@ -16,6 +16,8 @@ export const rooms = sqliteTable("rooms", {
   id: text("id").primaryKey().$defaultFn(createId),
   number: text("number").notNull().unique(),
   token: text("token").notNull().unique(),
+  /** "room" (chambre) ou "desk" (QR code posé à la réception : prévenir quand personne n'est au comptoir). */
+  kind: text("kind").notNull().default("room"),
   createdAt: ts("created_at").notNull().$defaultFn(now),
 });
 
@@ -125,6 +127,17 @@ export const feedback = sqliteTable(
   },
   (t) => [index("feedback_created_idx").on(t.createdAt), check("feedback_rating_range", sql`${t.rating} IS NULL OR (${t.rating} BETWEEN 1 AND 5)`)],
 );
+
+/**
+ * Téléphones de la réception abonnés aux notifications (Web Push), enregistrés
+ * depuis Relais. Notifications sans contenu : le téléphone va chercher le détail
+ * dans Relais, derrière la connexion de l'équipe.
+ */
+export const pushSubscriptions = sqliteTable("push_subscriptions", {
+  endpoint: text("endpoint").primaryKey(),
+  staff: text("staff").notNull(),
+  createdAt: ts("created_at").notNull().$defaultFn(now),
+});
 
 /** Réglages de l'hôtel modifiables à la réception (une seule ligne, id = "hotel"). */
 export const settings = sqliteTable("settings", {
