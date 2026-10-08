@@ -25,6 +25,7 @@ const pt: Messages = {
     status_DONE: "Concluído",
     error: "Não foi possível enviar o pedido. Verifique a ligação e tente novamente, ou ligue para a receção.",
     rateLimited: "Enviou muitos pedidos. Por favor, ligue diretamente para a receção.",
+    notCheckedIn: "Os pedidos e o minibar ficam disponíveis assim que a receção registar a sua chegada. Para outras questões, ligue para a receção.",
     call: "Ligar para a receção",
     language: "Idioma",
     copy: "Copiar",

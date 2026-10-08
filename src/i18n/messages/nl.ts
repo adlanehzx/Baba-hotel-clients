@@ -25,6 +25,7 @@ const nl: Messages = {
     status_DONE: "Afgehandeld",
     error: "Het verzoek kon niet worden verzonden. Controleer uw verbinding en probeer het opnieuw, of bel de receptie.",
     rateLimited: "U hebt veel verzoeken gestuurd. Bel alstublieft rechtstreeks de receptie.",
+    notCheckedIn: "Verzoeken en de minibar zijn beschikbaar zodra de receptie uw aankomst heeft geregistreerd. Bel voor al het andere de receptie.",
     call: "Receptie bellen",
     language: "Taal",
     copy: "Kopiëren",

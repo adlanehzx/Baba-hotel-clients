@@ -25,6 +25,7 @@ const zh: Messages = {
     status_DONE: "已完成",
     error: "请求发送失败。请检查网络后重试，或致电前台。",
     rateLimited: "您发送的请求较多，请直接致电前台。",
+    notCheckedIn: "前台登记您入住后，即可提交需求和使用迷你吧。如有其他问题，请致电前台。",
     call: "致电前台",
     language: "语言",
     copy: "复制",

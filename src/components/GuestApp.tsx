@@ -17,6 +17,8 @@ type Props = {
   metro: string;
   breakfastIncluded: boolean;
   products: Product[];
+  /** Séjour enregistré par la réception (check-in dans Relais) : sinon pas de demandes ni de minibar. */
+  checkedIn: boolean;
 };
 
 type Status = "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED";
@@ -80,7 +82,9 @@ function stepsFor(category: Category, t: Messages): { status: Status; label: str
   ];
 }
 
-export default function GuestApp({ token, room, initialLocale, settings, metro, breakfastIncluded, products }: Props) {
+export default function GuestApp({ token, room, initialLocale, settings, metro, breakfastIncluded, products, checkedIn }: Props) {
+  // Passe à false si la réception fait le check-out pendant que la page est ouverte.
+  const [open, setOpen] = useState(checkedIn);
   const [locale, setLocale] = useState<Locale>(initialLocale);
   const t = MESSAGES[locale];
   const price = useCallback((cents: number) => formatPrice(cents, locale), [locale]);
@@ -215,7 +219,7 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
     setState("sending");
     try {
       const r = await post({ category, message, time: category === "lateCheckout" ? lateTime : undefined });
-      if (!r.ok) return setState(r.status === 429 ? "rate" : "error");
+      if (!r.ok) return r.status === 403 ? setOpen(false) : setState(r.status === 429 ? "rate" : "error");
       setState("sent");
       setMessage("");
       setCategory(null);
@@ -244,7 +248,7 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
     setMbState("sending");
     try {
       const r = await post({ category: "minibar", items });
-      if (!r.ok) return setMbState(r.status === 409 ? "stock" : r.status === 429 ? "rate" : "error");
+      if (!r.ok) return r.status === 403 ? setOpen(false) : setMbState(r.status === 409 ? "stock" : r.status === 429 ? "rate" : "error");
       setStock((s) => {
         const next = new Map(s);
         items.forEach((i) => next.set(i.productId, (next.get(i.productId) ?? 0) - i.qty));
@@ -377,6 +381,13 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
           </div>
         </section>
 
+        {!open && (
+          <section aria-labelledby="ask-t" className={styles.ask}>
+            <h2 id="ask-t" className={`${styles.askTitle} serif`}>{t.ui.askTitle}</h2>
+            <p className={styles.askIntro}>{t.ui.notCheckedIn}</p>
+          </section>
+        )}
+        {open && (<>
         {/* ---------- Demande ---------- */}
         <section aria-labelledby="ask-t" className={styles.ask}>
           <h2 id="ask-t" className={`${styles.askTitle} serif`}>{t.ui.askTitle}</h2>
@@ -494,6 +505,7 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
             </div>
           )}
         </section>
+        </>)}
       </main>
 
       <footer className={styles.foot}>

@@ -25,6 +25,7 @@ const es: Messages = {
     status_DONE: "Resuelta",
     error: "No se pudo enviar la solicitud. Compruebe su conexión e inténtelo de nuevo, o llame a recepción.",
     rateLimited: "Ha enviado muchas solicitudes. Por favor, llame directamente a recepción.",
+    notCheckedIn: "Las solicitudes y el minibar se activan en cuanto la recepción registra su llegada. Para cualquier otra cosa, llame a recepción.",
     call: "Llamar a recepción",
     language: "Idioma",
     copy: "Copiar",

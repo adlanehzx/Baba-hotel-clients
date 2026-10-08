@@ -25,6 +25,7 @@ const en: Messages = {
     status_DONE: "Done",
     error: "Your request couldn't be sent. Check your connection and try again, or call reception.",
     rateLimited: "You've sent a lot of requests. Please call reception directly.",
+    notCheckedIn: "Requests and the minibar open as soon as reception has checked you in. For anything else, please call reception.",
     call: "Call reception",
     language: "Language",
     copy: "Copy",

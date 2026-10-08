@@ -25,6 +25,7 @@ const de: Messages = {
     status_DONE: "Erledigt",
     error: "Die Anfrage konnte nicht gesendet werden. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut, oder rufen Sie die Rezeption an.",
     rateLimited: "Sie haben viele Anfragen gesendet. Bitte rufen Sie direkt die Rezeption an.",
+    notCheckedIn: "Anfragen und die Minibar sind verfügbar, sobald die Rezeption Ihre Ankunft erfasst hat. Für alles andere rufen Sie bitte die Rezeption an.",
     call: "Rezeption anrufen",
     language: "Sprache",
     copy: "Kopieren",

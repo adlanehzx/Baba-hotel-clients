@@ -23,6 +23,7 @@ const fr = {
     status_DONE: "Traitée",
     error: "La demande n'a pas pu être envoyée. Vérifiez votre connexion et réessayez, ou appelez la réception.",
     rateLimited: "Vous avez envoyé beaucoup de demandes. Merci d'appeler directement la réception.",
+    notCheckedIn: "Les demandes et le minibar s'ouvrent dès que la réception a enregistré votre arrivée. Pour toute question, appelez la réception.",
     call: "Appeler la réception",
     language: "Langue",
     copy: "Copier",

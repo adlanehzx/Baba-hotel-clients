@@ -44,6 +44,7 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
       settings={settings}
       metro={METRO_STATION}
       breakfastIncluded={stay?.breakfastIncluded ?? false}
+      checkedIn={!!stay}
       products={minibar}
     />
   );

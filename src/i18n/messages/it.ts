@@ -25,6 +25,7 @@ const it: Messages = {
     status_DONE: "Completata",
     error: "Impossibile inviare la richiesta. Controllate la connessione e riprovate, oppure chiamate la reception.",
     rateLimited: "Avete inviato molte richieste. Per favore chiamate direttamente la reception.",
+    notCheckedIn: "Le richieste e il minibar si attivano non appena la reception ha registrato il suo arrivo. Per qualsiasi altra cosa, chiami la reception.",
     call: "Chiama la reception",
     language: "Lingua",
     copy: "Copia",

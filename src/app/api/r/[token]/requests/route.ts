@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { db, products, requests, type RequestDetails } from "@/db";
-import { findRoomByToken } from "@/lib/rooms";
+import { currentStay, findRoomByToken } from "@/lib/rooms";
 import { getSettings } from "@/lib/settings";
 import { lateCheckoutOptions } from "@/lib/time";
 import {
@@ -22,6 +22,10 @@ const bad = (error: string, status = 400) => NextResponse.json({ error }, { stat
 export async function POST(req: NextRequest, { params }: Ctx) {
   const room = await findRoomByToken((await params).token);
   if (!room) return bad("room_not_found", 404);
+  // Les demandes et le minibar ne sont ouverts que pendant un séjour enregistré
+  // (check-in fait dans Relais) : un ancien client qui a gardé le lien ne peut
+  // plus rien envoyer, ni commander depuis l'extérieur.
+  if (!(await currentStay(room.id))) return bad("not_checked_in", 403);
 
   const body = await req.json().catch(() => null);
   const category = body?.category as Category;
