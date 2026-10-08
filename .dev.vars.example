@@ -1,2 +1,0 @@
-# Variables pour le développement local : copier ce fichier en .dev.vars
-RECEPTION_PASSWORD="choisir-un-mot-de-passe"

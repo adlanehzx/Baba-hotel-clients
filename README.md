@@ -73,7 +73,6 @@ npm run db:migrate    # l'applique à la base de production (wrangler d1 migrati
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars   # mot de passe de la réception en local
 npm run db:migrate:local         # base D1 locale
 npm run dev                      # http://localhost:3000
 npm run preview                  # même chose dans le vrai runtime Workers
