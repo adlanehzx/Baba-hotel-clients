@@ -1,7 +1,7 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
-import { inArray } from "drizzle-orm";
-import { db, pushSubscriptions } from "@/db";
+import { eq, inArray } from "drizzle-orm";
+import { db, pushSubscriptions, requests } from "@/db";
 
 /**
  * Notifications Web Push vers les téléphones de la réception (abonnés depuis Relais).
@@ -51,11 +51,28 @@ export async function notifyReception(): Promise<void> {
   if (gone.length) await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.endpoint, gone));
 }
 
-/** Lance l'envoi sans retarder la réponse au client. */
-export function notifyReceptionLater() {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const stillWaiting = async (requestId: string) =>
+  (await db.select({ status: requests.status }).from(requests).where(eq(requests.id, requestId)).limit(1))[0]?.status === "NEW";
+
+/**
+ * Lance l'envoi sans retarder la réponse au client.
+ * Appel du comptoir (deskCall) : rafale de 3 notifications à 8 s d'intervalle, pour que
+ * le téléphone sonne plusieurs fois (même sur iPhone) ; arrêtée dès que quelqu'un répond.
+ */
+export function notifyReceptionLater(deskCall?: string) {
+  const run = async () => {
+    await notifyReception();
+    if (!deskCall) return;
+    for (let i = 0; i < 2; i++) {
+      await sleep(8000);
+      if (!(await stillWaiting(deskCall))) return;
+      await notifyReception();
+    }
+  };
   try {
     const { ctx } = getCloudflareContext();
-    ctx.waitUntil(notifyReception().catch((e) => console.error("push", e)));
+    ctx.waitUntil(run().catch((e) => console.error("push", e)));
   } catch (e) {
     console.error("push", e);
   }

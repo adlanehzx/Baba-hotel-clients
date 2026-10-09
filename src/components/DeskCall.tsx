@@ -7,6 +7,8 @@ import styles from "./guest.module.css";
 const LANG_KEY = "baba:lang";
 const CALL_KEY = (token: string) => `baba:desk:${token}`;
 const POLL_MS = 5000;
+const RELAUNCH_MS = 60_000;
+const RELAUNCH_MAX_MS = 5 * 60_000;
 
 type Call = { id: string; status: "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED"; at: number };
 
@@ -69,6 +71,23 @@ export default function DeskCall({ token, initialLocale, phone }: { token: strin
     const id = setInterval(() => document.visibilityState === "visible" && refresh(), POLL_MS);
     return () => clearInterval(id);
   }, [waiting, refresh]);
+
+  // Tant que personne n'a répondu (5 minutes au plus), la page relance les téléphones
+  // une fois par minute ; le serveur refuse toute relance plus rapprochée.
+  const unanswered = call?.status === "NEW";
+  useEffect(() => {
+    if (!unanswered) return;
+    const id = setInterval(() => {
+      const c = readCall(token);
+      if (!c || c.status !== "NEW" || Date.now() - c.at > RELAUNCH_MAX_MS) return;
+      void fetch(`/api/r/${token}/requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: "desk", message: "", lang: locale }),
+      }).catch(() => {});
+    }, RELAUNCH_MS);
+    return () => clearInterval(id);
+  }, [unanswered, token, locale]);
 
   const send = async () => {
     setState("sending");

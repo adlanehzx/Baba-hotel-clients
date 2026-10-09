@@ -57,13 +57,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       .where(and(eq(requests.roomId, room.id), eq(requests.status, "NEW"), gte(requests.createdAt, fiveMinutesAgo)))
       .limit(1);
     if (open) {
-      if (message) await db.update(requests).set({ message }).where(eq(requests.id, open.id));
-      // « Prévenir à nouveau » après une minute sans réponse : on relance les téléphones.
-      if (new Date(open.createdAt).getTime() < Date.now() - 60_000) notifyReceptionLater();
-      return NextResponse.json(open, { status: 200 });
+      // Relance (page du client ouverte, ou « Prévenir à nouveau ») : au plus une fois par minute.
+      // updatedAt garde l'heure de la dernière alerte.
+      const [last] = await db.select({ updatedAt: requests.updatedAt }).from(requests).where(eq(requests.id, open.id)).limit(1);
+      const due = !last || new Date(last.updatedAt).getTime() < Date.now() - 55_000;
+      if (message || due) await db.update(requests).set({ ...(message ? { message } : {}), updatedAt: new Date() }).where(eq(requests.id, open.id));
+      if (due) notifyReceptionLater();
+      return NextResponse.json({ ...open, relaunched: due }, { status: 200 });
     }
     const [created] = await db.insert(requests).values({ roomId: room.id, category, message: message || null, lang }).returning(returning);
-    notifyReceptionLater();
+    notifyReceptionLater(created.id);
     return NextResponse.json(created, { status: 201 });
   }
 
