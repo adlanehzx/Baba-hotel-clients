@@ -3,11 +3,13 @@
  * Ce fichier est recopié tel quel dans Baba-hotel-clients (src/lib/shifts.ts) :
  * les deux applications doivent calculer la même chose.
  */
+// Semaine : 3 services (matin, soir, nuit). Week-end : 2 services de 12 h (journée, nuit 12 h).
 export const SHIFT_HOURS: Record<string, [number, number]> = {
-  matin: [7, 15],
-  soir: [15, 23],
+  matin: [7, 16],
+  soir: [16, 23],
   nuit: [23, 7], // jusqu'au lendemain 7 h
-  journee: [8, 20],
+  journee: [7, 19],
+  nuit12: [19, 7], // nuit de 12 h (week-end), jusqu'au lendemain 7 h
 };
 
 export type DutyShift = { day: string; staff: string; shift: string };
