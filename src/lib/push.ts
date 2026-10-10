@@ -1,7 +1,8 @@
 import "server-only";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { eq, inArray } from "drizzle-orm";
-import { db, pushSubscriptions, requests } from "@/db";
+import { db, pushSubscriptions, requests, settings } from "@/db";
+import { onDutyNow, type DutyShift } from "@/lib/shifts";
 
 /**
  * Notifications Web Push vers les téléphones de la réception (abonnés depuis Relais).
@@ -31,8 +32,14 @@ async function vapidHeader(endpoint: string, privateJwk: string, publicKey: stri
 export async function notifyReception(): Promise<void> {
   const { env } = getCloudflareContext();
   if (!env.VAPID_PRIVATE_KEY || !env.VAPID_PUBLIC_KEY) return;
-  const subs = await db.select().from(pushSubscriptions);
-  if (!subs.length) return;
+  const all = await db.select().from(pushSubscriptions);
+  if (!all.length) return;
+  // Seules les personnes en service d'après le planning de Relais sont prévenues ;
+  // si personne n'est prévu à cette heure (ou aucun abonné en service), tout le monde l'est.
+  const [dutyRow] = await db.select().from(settings).where(eq(settings.id, "duty")).limit(1);
+  const onDuty = onDutyNow(((dutyRow?.data as { shifts?: DutyShift[] } | undefined)?.shifts ?? []), Date.now());
+  const subs = onDuty ? all.filter((s) => onDuty.includes(s.staff)) : all;
+  if (!subs.length) subs.push(...all);
   const gone: string[] = [];
   await Promise.all(
     subs.map(async (s) => {
