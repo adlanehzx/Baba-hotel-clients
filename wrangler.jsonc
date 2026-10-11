@@ -9,6 +9,14 @@
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
+  // Paiement en ligne (Paytweak) — secrets à définir avec `wrangler secret put`,
+  // JAMAIS dans ce fichier ni dans le code (dépôt public) :
+  //   wrangler secret put PAYTWEAK_PUBLIC         (jeton public)
+  //   wrangler secret put PAYTWEAK_SECRET         (jeton secret / TOKEN)
+  //   wrangler secret put PAYTWEAK_WEBHOOK_SECRET (jeton aléatoire dans l'URL du webhook)
+  //   wrangler secret put PAYTWEAK_BASE           (optionnel : bascule sandbox, ex. https://api.paytweak.dev/v1/)
+  // Tant que PAYTWEAK_PUBLIC/SECRET sont absents, l'app garde son comportement
+  // actuel (minibar / départ tardif sans paiement, pas de petit-déj à la carte).
   "d1_databases": [
     {
       "binding": "DB",

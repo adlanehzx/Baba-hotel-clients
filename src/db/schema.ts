@@ -44,10 +44,11 @@ export const stays = sqliteTable(
 export const REQUEST_STATUSES = ["NEW", "IN_PROGRESS", "DONE", "CANCELLED"] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
-/** Détails propres à certains types de demande. */
+/** Détails propres à certains types de demande. `paid` : commande réglée en ligne (Paytweak). */
 export type RequestDetails =
-  | { kind: "lateCheckout"; time: string; price: number }
-  | { kind: "minibar"; items: { productId: string; name: string; price: number; qty: number }[]; total: number };
+  | { kind: "lateCheckout"; time: string; price: number; paid?: boolean }
+  | { kind: "minibar"; items: { productId: string; name: string; price: number; qty: number }[]; total: number; paid?: boolean }
+  | { kind: "breakfast"; people: number; unitPrice: number; total: number; paid?: boolean };
 
 export const requests = sqliteTable(
   "requests",
@@ -68,6 +69,61 @@ export const requests = sqliteTable(
   (t) => [
     index("requests_status_created_idx").on(t.status, t.createdAt),
     index("requests_room_created_idx").on(t.roomId, t.createdAt),
+  ],
+);
+
+export const ORDER_KINDS = ["minibar", "breakfast", "lateCheckout"] as const;
+export type OrderKind = (typeof ORDER_KINDS)[number];
+
+export const ORDER_STATUSES = ["PENDING_PAYMENT", "PAID", "EXPIRED", "CANCELLED", "REFUNDED"] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+/** Lignes d'une commande payable (le montant fait foi, recalculé côté serveur). */
+export type OrderDetails =
+  | { kind: "lateCheckout"; time: string }
+  | { kind: "minibar"; items: { productId: string; name: string; price: number; qty: number }[] }
+  | { kind: "breakfast"; people: number; unitPrice: number };
+
+/**
+ * Commande réglée en ligne (minibar / petit-déjeuner à la carte / départ tardif).
+ * Le client paie via un lien Paytweak ; la commande n'est transmise à la réception
+ * (ligne `requests`) qu'une fois le paiement confirmé et revérifié côté serveur.
+ *
+ * `amount` est calculé côté serveur à partir des réglages de l'hôtel : c'est lui,
+ * jamais le montant envoyé par le téléphone, qui sert à vérifier le paiement.
+ * `linkId` permet de désactiver ou rembourser le lien ; `expiresAt` borne la
+ * validité (au plus 30 min, et jamais au-delà de l'heure limite du service).
+ */
+export const orders = sqliteTable(
+  "orders",
+  {
+    id: text("id").primaryKey().$defaultFn(createId),
+    roomId: text("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ORDER_KINDS }).notNull(),
+    details: text("details", { mode: "json" }).notNull().$type<OrderDetails>(),
+    /** Montant total en centimes, calculé côté serveur (source de vérité). */
+    amount: integer("amount").notNull(),
+    currency: text("currency").notNull().default("EUR"),
+    status: text("status", { enum: ORDER_STATUSES }).notNull().default("PENDING_PAYMENT"),
+    /** Identifiant du lien Paytweak (pour désactivation / remboursement). */
+    linkId: text("link_id"),
+    /** URL de la page de paiement Paytweak présentée au client. */
+    payUrl: text("pay_url"),
+    /** Fin de validité du lien : min(30 min, heure limite du service). */
+    expiresAt: ts("expires_at").notNull(),
+    paidAt: ts("paid_at"),
+    refundedAt: ts("refunded_at"),
+    /** Demande créée à la réception une fois le paiement confirmé. */
+    requestId: text("request_id").references(() => requests.id, { onDelete: "set null" }),
+    createdAt: ts("created_at").notNull().$defaultFn(now),
+    updatedAt: ts("updated_at").notNull().$defaultFn(now).$onUpdate(now),
+  },
+  (t) => [
+    index("orders_status_expires_idx").on(t.status, t.expiresAt),
+    index("orders_room_created_idx").on(t.roomId, t.createdAt),
+    index("orders_created_idx").on(t.createdAt),
   ],
 );
 
@@ -151,3 +207,4 @@ export type Stay = typeof stays.$inferSelect;
 export type Product = typeof products.$inferSelect;
 export type GuestRequest = typeof requests.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
+export type Order = typeof orders.$inferSelect;

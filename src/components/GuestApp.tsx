@@ -22,7 +22,18 @@ type Props = {
   checkedIn: boolean;
   /** Canal de réservation saisi au check-in (invitation à laisser un avis public adaptée). */
   source: string;
+  /** Paiement en ligne (Paytweak) configuré : minibar / départ tardif deviennent payants, le petit-déj à la carte s'ouvre. */
+  paymentEnabled: boolean;
+  /** Le petit-déjeuner à la carte peut être commandé maintenant (non inclus + avant l'heure limite). */
+  breakfastOrderable: boolean;
+  /** Un départ tardif peut encore être commandé (avant l'heure limite). */
+  lateCheckoutOrderable: boolean;
 };
+
+type PayStatus = "PENDING_PAYMENT" | "PAID" | "EXPIRED" | "CANCELLED" | "REFUNDED";
+type PayKind = "minibar" | "breakfast" | "lateCheckout";
+type TrackedOrder = { id: string; kind: PayKind; amount: number; status: PayStatus; payUrl: string | null; createdAt: string };
+const ordKey = (token: string) => `baba:orders:${token}`;
 
 type Status = "NEW" | "IN_PROGRESS" | "DONE" | "CANCELLED";
 type Tracked = { id: string; category: Category; status: Status; createdAt: string; details: RequestDetails | null };
@@ -85,7 +96,7 @@ function stepsFor(category: Category, t: Messages): { status: Status; label: str
   ];
 }
 
-export default function GuestApp({ token, room, initialLocale, settings, metro, breakfastIncluded, products, checkedIn, source }: Props) {
+export default function GuestApp({ token, room, initialLocale, settings, metro, breakfastIncluded, products, checkedIn, source, paymentEnabled, breakfastOrderable, lateCheckoutOrderable }: Props) {
   // Passe à false si la réception fait le check-out pendant que la page est ouverte.
   const [open, setOpen] = useState(checkedIn);
   const [locale, setLocale] = useState<Locale>(initialLocale);
@@ -221,6 +232,15 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
     }
     setState("sending");
     try {
+      // Départ tardif payant : passe par le paiement en ligne (sinon demande simple).
+      if (category === "lateCheckout" && paymentEnabled) {
+        const pr = await startPayment("lateCheckout", { time: lateTime });
+        if (!pr.ok) return pr.status === 403 ? setOpen(false) : setState("error");
+        setMessage("");
+        setCategory(null);
+        setState("idle");
+        return;
+      }
       const r = await post({ category, message, time: category === "lateCheckout" ? lateTime : undefined });
       if (!r.ok) return r.status === 403 ? setOpen(false) : setState(r.status === 429 ? "rate" : "error");
       setState("sent");
@@ -250,6 +270,19 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
     if (!items.length) return;
     setMbState("sending");
     try {
+      // Minibar payant : crée une commande à régler en ligne (le stock est réservé).
+      if (paymentEnabled) {
+        const pr = await startPayment("minibar", { items });
+        if (!pr.ok) return pr.status === 403 ? setOpen(false) : setMbState(pr.status === 409 ? "stock" : "error");
+        setStock((s) => {
+          const next = new Map(s);
+          items.forEach((i) => next.set(i.productId, (next.get(i.productId) ?? 0) - i.qty));
+          return next;
+        });
+        setCart({});
+        setMbState("idle");
+        return;
+      }
       const r = await post({ category: "minibar", items });
       if (!r.ok) return r.status === 403 ? setOpen(false) : setMbState(r.status === 409 ? "stock" : r.status === 429 ? "rate" : "error");
       setStock((s) => {
@@ -262,6 +295,89 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
     } catch {
       setMbState("error");
     }
+  };
+
+  /* ---------- Paiement en ligne (Paytweak) ---------- */
+  const [orders, setOrders] = useState<TrackedOrder[]>([]);
+  const ordersRef = useRef(orders);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
+  const [payState, setPayState] = useState<"idle" | "sending" | "error" | "closed">("idle");
+
+  useEffect(() => {
+    const saved = readStore<TrackedOrder[]>(ordKey(token), []).filter((o) => Date.now() - Date.parse(o.createdAt) < KEEP_MS);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOrders(saved);
+  }, [token]);
+
+  const rememberOrders = useCallback(
+    (next: TrackedOrder[]) => {
+      ordersRef.current = next;
+      setOrders(next);
+      writeStore(ordKey(token), next);
+    },
+    [token],
+  );
+
+  const refreshOrders = useCallback(async () => {
+    const list = ordersRef.current;
+    if (!list.length) return;
+    try {
+      const res = await fetch(`/api/r/${token}/orders?ids=${list.map((o) => o.id).join(",")}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const rows: { id: string; status: PayStatus; payUrl: string | null }[] = await res.json();
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      rememberOrders(list.map((o) => (byId.has(o.id) ? { ...o, status: byId.get(o.id)!.status, payUrl: byId.get(o.id)!.payUrl } : o)));
+    } catch {}
+  }, [token, rememberOrders]);
+
+  const hasPending = orders.some((o) => o.status === "PENDING_PAYMENT");
+  useEffect(() => {
+    if (!hasPending) return;
+    refreshOrders();
+    const id = setInterval(() => document.visibilityState === "visible" && refreshOrders(), POLL_MS);
+    const onVis = () => document.visibilityState === "visible" && refreshOrders();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [hasPending, refreshOrders]);
+
+  /** Crée une commande payable, mémorise le suivi et ouvre la page de paiement. */
+  const startPayment = async (kind: PayKind, payload: Record<string, unknown>): Promise<{ ok: boolean; status?: number }> => {
+    setPayState("sending");
+    try {
+      const res = await fetch(`/api/r/${token}/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind, ...payload, lang: locale }),
+      });
+      if (!res.ok) {
+        if (res.status === 403) setOpen(false);
+        setPayState("error");
+        return { ok: false, status: res.status };
+      }
+      const created: { orderId: string; payUrl: string; amount: number } = await res.json();
+      rememberOrders([
+        { id: created.orderId, kind, amount: created.amount, status: "PENDING_PAYMENT", payUrl: created.payUrl, createdAt: new Date().toISOString() },
+        ...ordersRef.current,
+      ]);
+      setPayState("idle");
+      // Ouvre la page de paiement (le suivi reste visible pour revenir / relancer).
+      if (created.payUrl) window.open(created.payUrl, "_blank", "noopener");
+      return { ok: true };
+    } catch {
+      setPayState("error");
+      return { ok: false };
+    }
+  };
+
+  const orderLabel = (o: TrackedOrder) => {
+    if (o.kind === "minibar") return t.ui.minibarTitle;
+    if (o.kind === "breakfast") return t.ui.breakfastLabel;
+    return t.categories.lateCheckout;
   };
 
   const faqEntries = Object.entries(t.faq) as [keyof Messages["faq"], { q: string; a: string; aIncluded?: string }][];
@@ -313,7 +429,7 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
                 return (
                   <li key={r.id} className={styles.trackItem} data-status={r.status}>
                     <div className={styles.trackTop}>
-                      <span className={styles.trackName}>{t.categories[r.category] ?? r.category}</span>
+                      <span className={styles.trackName}>{(t.categories as Record<string, string>)[r.category] ?? r.category}</span>
                       <time className={styles.trackTime} dateTime={r.createdAt}>
                         {new Date(r.createdAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}
                       </time>
@@ -333,6 +449,39 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
                   </li>
                 );
               })}
+            </ul>
+          </section>
+        )}
+
+        {/* ---------- Suivi des paiements ---------- */}
+        {paymentEnabled && orders.length > 0 && (
+          <section className={styles.tracking} aria-live="polite">
+            <h2 className={styles.h2}>{t.ui.yourOrders}</h2>
+            <ul className={styles.orderList}>
+              {orders.map((o) => (
+                <li key={o.id} className={styles.orderItem} data-status={o.status}>
+                  <div className={styles.orderTop}>
+                    <span className={styles.trackName}>{orderLabel(o)}</span>
+                    <span className={styles.orderAmount}>{price(o.amount)}</span>
+                  </div>
+                  <p className={styles.orderStatus}>
+                    {o.status === "PAID"
+                      ? t.ui.payPaid
+                      : o.status === "PENDING_PAYMENT"
+                        ? t.ui.payPending
+                        : o.status === "EXPIRED"
+                          ? t.ui.payExpired
+                          : o.status === "REFUNDED"
+                            ? t.ui.payRefunded
+                            : t.ui.payCancelled}
+                  </p>
+                  {o.status === "PENDING_PAYMENT" && o.payUrl && (
+                    <a className={styles.payBtn} href={o.payUrl} target="_blank" rel="noopener noreferrer">
+                      {t.ui.payNow}
+                    </a>
+                  )}
+                </li>
+              ))}
             </ul>
           </section>
         )}
@@ -399,7 +548,8 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
           {state === "sent" && <Sent title={t.ui.sentTitle} text={t.ui.sentText} />}
 
           <div className={styles.cats} role="radiogroup" aria-labelledby="ask-t">
-            {CATEGORIES.map((c) => (
+            {/* Départ tardif payant : masqué une fois l'heure limite passée. */}
+            {CATEGORIES.filter((c) => !(c === "lateCheckout" && paymentEnabled && !lateCheckoutOrderable)).map((c) => (
               <button key={c} type="button" role="radio" aria-checked={category === c} className={styles.cat} onClick={() => pick(c)}>
                 <Icon d={ICONS[c]} />
                 <span>{t.categories[c]}</span>
@@ -449,16 +599,29 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
               {state === "error" && <p className={styles.fieldError} role="alert">{t.ui.error}</p>}
               {state === "rate" && <p className={styles.fieldError} role="alert">{t.ui.rateLimited}</p>}
               <button className={styles.send} type="submit" disabled={state === "sending"} tabIndex={category ? 0 : -1}>
-                {state === "sending" ? t.ui.sending : t.ui.send}
+                {state === "sending" ? t.ui.sending : category === "lateCheckout" && paymentEnabled ? t.ui.payAndOrder : t.ui.send}
               </button>
             </div>
           </form>
         </section>
 
+        {/* ---------- Petit-déjeuner à la carte ---------- */}
+        {paymentEnabled && breakfastOrderable && (
+          <BreakfastOrder
+            t={t}
+            price={price}
+            unitPrice={settings.breakfastPrice}
+            start={settings.breakfastStart}
+            end={settings.breakfastEnd}
+            sending={payState === "sending"}
+            onOrder={(people) => startPayment("breakfast", { people })}
+          />
+        )}
+
         {/* ---------- Minibar ---------- */}
         <section aria-labelledby="mb-t" className={styles.minibar}>
           <h2 id="mb-t" className={`${styles.askTitle} serif`}>{t.ui.minibarTitle}</h2>
-          <p className={styles.askIntro}>{t.ui.minibarIntro}</p>
+          <p className={styles.askIntro}>{paymentEnabled ? t.ui.minibarIntroPay : t.ui.minibarIntro}</p>
           {mbState === "sent" && <Sent title={t.ui.mb_NEW} text={t.ui.mbSentText} />}
 
           {products.length === 0 ? (
@@ -503,7 +666,7 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
                 {t.ui.total} <strong>{price(cartTotal)}</strong>
               </span>
               <button type="button" className={styles.send} onClick={order} disabled={mbState === "sending"}>
-                {mbState === "sending" ? t.ui.sending : t.ui.order}
+                {mbState === "sending" ? t.ui.sending : paymentEnabled ? t.ui.payAndOrder : t.ui.order}
               </button>
             </div>
           )}
@@ -525,6 +688,51 @@ export default function GuestApp({ token, room, initialLocale, settings, metro, 
         <p className={styles.address}>{settings.address}</p>
       </footer>
     </div>
+  );
+}
+
+/** Commande de petit-déjeuner à la carte : nombre de personnes puis paiement en ligne. */
+function BreakfastOrder({
+  t,
+  price,
+  unitPrice,
+  start,
+  end,
+  sending,
+  onOrder,
+}: {
+  t: Messages;
+  price: (cents: number) => string;
+  unitPrice: number;
+  start: string;
+  end: string;
+  sending: boolean;
+  onOrder: (people: number) => void;
+}) {
+  const [people, setPeople] = useState(1);
+  const total = people * unitPrice;
+  return (
+    <section aria-labelledby="bf-t" className={styles.minibar}>
+      <h2 id="bf-t" className={`${styles.askTitle} serif`}>{t.ui.breakfastOrderTitle}</h2>
+      <p className={styles.askIntro}>{fill(t.ui.breakfastOrderIntro, { start, end, price: price(unitPrice) })}</p>
+      <div className={styles.cartBar}>
+        <div className={styles.stepper}>
+          <button type="button" onClick={() => setPeople((n) => Math.max(1, n - 1))} disabled={people <= 1} aria-label={t.ui.remove}>
+            −
+          </button>
+          <output aria-live="polite">{people}</output>
+          <button type="button" onClick={() => setPeople((n) => Math.min(20, n + 1))} disabled={people >= 20} aria-label={t.ui.add}>
+            +
+          </button>
+        </div>
+        <span>
+          {t.ui.total} <strong>{price(total)}</strong>
+        </span>
+        <button type="button" className={styles.send} onClick={() => onOrder(people)} disabled={sending}>
+          {sending ? t.ui.sending : t.ui.payAndOrder}
+        </button>
+      </div>
+    </section>
   );
 }
 

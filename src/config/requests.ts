@@ -9,10 +9,10 @@ export const CATEGORIES = [
   "other",
 ] as const;
 
-/** Les commandes minibar passent par leur propre section, pas par la grille ci-dessus. */
-export type Category = (typeof CATEGORIES)[number] | "minibar" | "desk";
+/** Minibar et petit-déjeuner passent par leur propre section (paiement en ligne), pas par la grille. */
+export type Category = (typeof CATEGORIES)[number] | "minibar" | "breakfast" | "desk";
 /** "desk" : appel depuis le QR code posé à la réception (personne au comptoir). */
-export const ALL_CATEGORIES: Category[] = [...CATEGORIES, "minibar", "desk"];
+export const ALL_CATEGORIES: Category[] = [...CATEGORIES, "minibar", "breakfast", "desk"];
 
 /** Pour ces demandes, le client doit écrire un message. */
 export const MESSAGE_REQUIRED: Category[] = ["problem", "other"];
@@ -27,6 +27,7 @@ export const CATEGORY_LABELS_FR: Record<Category, string> = {
   taxi: "Taxi",
   other: "Autre demande",
   minibar: "Commande minibar",
+  breakfast: "Petit-déjeuner à la carte",
   desk: "Client à l'accueil",
 };
 

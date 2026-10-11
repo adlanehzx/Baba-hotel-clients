@@ -4,7 +4,9 @@ import { db, products } from "@/db";
 import { currentStay, findRoomByToken } from "@/lib/rooms";
 import { getSettings } from "@/lib/settings";
 import { MESSAGES, pickLocale } from "@/i18n";
-import { METRO_STATION } from "@/config/hotel";
+import { METRO_STATION, HOTEL_TZ } from "@/config/hotel";
+import { linkLifeSeconds, lateCheckoutOptions } from "@/lib/time";
+import { paytweakConfigured } from "@/lib/paytweak";
 import GuestApp from "@/components/GuestApp";
 import DeskCall from "@/components/DeskCall";
 import styles from "@/components/guest.module.css";
@@ -43,6 +45,17 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
       .orderBy(asc(products.name)),
   ]);
 
+  // Paiement en ligne actif seulement si les secrets Paytweak sont configurés.
+  // Sinon l'app garde son comportement actuel (minibar/départ tardif sans paiement).
+  const paymentEnabled = paytweakConfigured();
+  const breakfastOrderable =
+    paymentEnabled &&
+    !(stay?.breakfastIncluded ?? false) &&
+    linkLifeSeconds(settings.breakfastOrderUntil, HOTEL_TZ) > 0;
+  const lateCheckoutOrderable =
+    linkLifeSeconds(settings.lateCheckoutOrderUntil, HOTEL_TZ) > 0 &&
+    lateCheckoutOptions(settings.checkOut, settings.lateCheckoutMax, settings.lateCheckoutHourly).length > 0;
+
   return (
     <GuestApp
       token={token}
@@ -53,6 +66,9 @@ export default async function RoomPage({ params }: PageProps<"/r/[token]">) {
       breakfastIncluded={stay?.breakfastIncluded ?? false}
       checkedIn={!!stay}
       source={stay?.source ?? ""}
+      paymentEnabled={paymentEnabled}
+      breakfastOrderable={breakfastOrderable}
+      lateCheckoutOrderable={lateCheckoutOrderable}
       // Stock illimité : toujours disponible pour le client (le nombre restant n'est jamais affiché).
       products={minibar.map(({ unlimited, ...p }) => (unlimited ? { ...p, stock: 999 } : p))}
     />
