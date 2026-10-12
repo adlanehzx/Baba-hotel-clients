@@ -270,6 +270,22 @@ export async function confirmPayment(orderId: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Revérifie auprès de Paytweak les commandes encore en attente parmi celles que
+ * le client suit, et les confirme si elles sont payées. Filet de sécurité qui
+ * rend la validation indépendante du webhook : même si le webhook n'arrive pas,
+ * la commande passe dès que le client rouvre sa page. Borné aux commandes de sa
+ * chambre (≤ 20), et sans effet si le paiement en ligne n'est pas configuré.
+ */
+export async function reconcilePending(roomId: string, ids: string[]): Promise<void> {
+  if (!ids.length || !paytweakConfigured()) return;
+  const pending = await db
+    .select({ id: orders.id })
+    .from(orders)
+    .where(and(eq(orders.roomId, roomId), eq(orders.status, "PENDING_PAYMENT"), inArray(orders.id, ids.slice(0, 20))));
+  for (const o of pending) await confirmPayment(o.id).catch(() => {});
+}
+
 export type OrderView = { id: string; kind: OrderKind; status: string; amount: number; payUrl: string | null };
 
 /** État des commandes suivies par le client (identifiants gardés sur son téléphone). */

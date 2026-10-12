@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { findRoomByToken, currentStay } from "@/lib/rooms";
-import { createOrder, orderViews, sweepExpired, OrderError, type NewOrderInput } from "@/lib/orders";
+import { createOrder, orderViews, sweepExpired, reconcilePending, OrderError, type NewOrderInput } from "@/lib/orders";
 import { isLocale } from "@/i18n";
 
 type Ctx = { params: Promise<{ token: string }> };
@@ -62,6 +62,9 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   await sweepExpired(room.id).catch(() => {});
 
   const ids = (req.nextUrl.searchParams.get("ids") ?? "").split(",").filter(Boolean).slice(0, 20);
+  // Filet de sécurité indépendant du webhook : on revérifie les commandes encore
+  // en attente auprès de Paytweak et on les valide si elles sont payées.
+  await reconcilePending(room.id, ids).catch(() => {});
   const rows = await orderViews(room.id, ids);
   return NextResponse.json(rows, { headers: { "Cache-Control": "no-store" } });
 }
