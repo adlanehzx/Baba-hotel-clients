@@ -237,8 +237,14 @@ export async function confirmPayment(orderId: string): Promise<boolean> {
   // Source de vérité : le reporting Paytweak, pas le contenu du webhook.
   const report = await reportByOrderId(orderId);
   if (!report.paid) return false;
-  // Montant : si Paytweak renvoie un montant exploitable, il doit correspondre au centime près.
-  if (report.amountCents !== null && report.amountCents !== o.amount) return false;
+  // Montant : si Paytweak renvoie un montant exploitable, il doit correspondre à notre
+  // montant (en centimes), que Paytweak l'exprime en euros décimaux (12.00 → 1200) ou
+  // déjà en centimes (1200). Toute autre valeur = refus (anti-falsification).
+  const matchesAmount =
+    report.amountCents === null ||
+    report.amountCents === o.amount ||
+    (report.amountRaw !== null && Math.round(report.amountRaw) === o.amount);
+  if (!matchesAmount) return false;
 
   const paidDetails: RequestDetails =
     o.details.kind === "minibar"

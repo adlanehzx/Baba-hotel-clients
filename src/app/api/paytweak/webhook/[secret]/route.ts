@@ -12,43 +12,59 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Récupère notre `order_id` dans un corps JSON, un formulaire ou la query. */
-async function extractOrderId(req: NextRequest): Promise<string | null> {
-  const fromQuery = req.nextUrl.searchParams.get("order_id") ?? req.nextUrl.searchParams.get("orderId");
-  if (fromQuery) return fromQuery;
+/** Première valeur non vide d'un objet pour une liste de clés. */
+function pick(o: Record<string, unknown> | null | undefined, keys: string[]): string | null {
+  if (!o) return null;
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v === "string" && v) return v;
+    if (typeof v === "number") return String(v);
+  }
+  return null;
+}
+
+/**
+ * Récupère (notice, order_id) de la notification Paytweak, quelle que soit sa forme :
+ * query (GET), corps JSON objet, corps JSON tableau (format documenté « tableau JSON »),
+ * ou formulaire. Le champ `notice` vaut PAYMENT / EMAIL / SMS / CLIC / SEPA / SYSTEM.
+ */
+async function extract(req: NextRequest): Promise<{ notice: string | null; orderId: string | null }> {
+  const sp = req.nextUrl.searchParams;
+  const qOrder = sp.get("order_id") ?? sp.get("orderId");
+  if (qOrder) return { notice: sp.get("notice"), orderId: qOrder };
+
   const ct = req.headers.get("content-type") ?? "";
   try {
     if (ct.includes("application/json")) {
-      const b = (await req.json()) as Record<string, unknown> | null;
-      const v = b?.order_id ?? b?.orderId ?? b?.ref ?? (b?.data as Record<string, unknown> | undefined)?.order_id;
-      return typeof v === "string" && v ? v : null;
+      const parsed = (await req.json()) as unknown;
+      const row = (Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed) as Record<string, unknown> | null;
+      const inner = (row?.data as Record<string, unknown> | undefined) ?? row;
+      return { notice: pick(inner, ["notice", "Notice"]), orderId: pick(inner, ["order_id", "orderId", "ref"]) };
     }
     const form = await req.formData();
-    const v = form.get("order_id") ?? form.get("orderId") ?? form.get("ref");
-    return typeof v === "string" && v ? v : null;
+    const obj = Object.fromEntries([...form.entries()].map(([k, v]) => [k, typeof v === "string" ? v : ""]));
+    return { notice: pick(obj, ["notice", "Notice"]), orderId: pick(obj, ["order_id", "orderId", "ref"]) };
   } catch {
-    return null;
+    return { notice: null, orderId: null };
   }
 }
 
 /**
- * Webhook Paytweak. Il n'est PAS signé : il ne sert que de déclencheur. Deux gardes :
- *   1. un secret imprévisible dans l'URL (anti-usurpation) ;
- *   2. la confirmation passe par une REVÉRIFICATION auprès de Paytweak (reporting) —
- *      c'est elle, et le montant calculé côté serveur, qui valident la commande.
- * On répond 200 dans tous les cas pour éviter les relances, sans jamais divulguer
- * d'information sur l'existence ou l'état réel d'une commande.
+ * Webhook (callback) Paytweak. Non signé : simple déclencheur, protégé par un secret
+ * imprévisible dans l'URL. La confirmation passe TOUJOURS par une revérification auprès
+ * de Paytweak (reporting : Status 9 + montant exact), jamais par le contenu reçu ici.
+ * Paytweak peut appeler en GET ou POST et pour tout type d'événement (`notice`) : on ne
+ * traite que les notifications de paiement, et on répond 200 sans rien divulguer.
  */
-export async function POST(req: NextRequest, { params }: Ctx) {
-  const { secret } = await params;
+async function handle(req: NextRequest, secret: string): Promise<NextResponse> {
   const env = getCloudflareContext().env as unknown as { PAYTWEAK_WEBHOOK_SECRET?: string };
   const expected = env.PAYTWEAK_WEBHOOK_SECRET ?? "";
-  if (!expected || !safeEqual(secret, expected)) {
-    return NextResponse.json({ ok: false }, { status: 404 });
-  }
+  if (!expected || !safeEqual(secret, expected)) return NextResponse.json({ ok: false }, { status: 404 });
 
-  const orderId = await extractOrderId(req);
-  if (orderId) {
+  const { notice, orderId } = await extract(req);
+  // On ne déclenche la revérification que pour un paiement (ou si le type n'est pas précisé,
+  // ex. test manuel). Les autres notices (EMAIL, SMS, CLIC, SEPA, SYSTEM) sont juste acquittées.
+  if (orderId && (!notice || notice.toUpperCase() === "PAYMENT")) {
     try {
       await confirmPayment(orderId);
     } catch (e) {
@@ -58,11 +74,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   return NextResponse.json({ ok: true });
 }
 
-// Certaines plateformes testent le webhook en GET : on accuse réception sans rien exposer.
-export async function GET(_req: NextRequest, { params }: Ctx) {
-  const { secret } = await params;
-  const env = getCloudflareContext().env as unknown as { PAYTWEAK_WEBHOOK_SECRET?: string };
-  const expected = env.PAYTWEAK_WEBHOOK_SECRET ?? "";
-  if (!expected || !safeEqual(secret, expected)) return NextResponse.json({ ok: false }, { status: 404 });
-  return NextResponse.json({ ok: true });
+export async function POST(req: NextRequest, { params }: Ctx) {
+  return handle(req, (await params).secret);
+}
+
+export async function GET(req: NextRequest, { params }: Ctx) {
+  return handle(req, (await params).secret);
 }

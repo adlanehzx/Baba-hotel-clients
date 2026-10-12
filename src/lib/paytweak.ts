@@ -273,8 +273,10 @@ export type ReportStatus = {
   /** Statut Paytweak : 9 = payé. */
   status: number | null;
   paid: boolean;
-  /** Montant constaté (centimes) si exploitable. */
+  /** Montant constaté (centimes), en supposant des euros décimaux côté Paytweak. */
   amountCents: number | null;
+  /** Montant brut tel que renvoyé (pour lever l'ambiguïté euros / centimes). */
+  amountRaw: number | null;
   raw: unknown;
 };
 
@@ -301,12 +303,13 @@ function readReport(data: unknown): ReportStatus {
     return null;
   };
   const o = flatten(data);
-  if (!o) return { status: null, paid: false, amountCents: null, raw: data };
-  const status = numberish(o.status ?? o.state ?? o.payment_status);
+  if (!o) return { status: null, paid: false, amountCents: null, amountRaw: null, raw: data };
+  // La doc webhook nomme le champ « Status » (majuscule) ; on accepte les deux.
+  const status = numberish(o.Status ?? o.status ?? o.state ?? o.payment_status);
   const amountRaw = numberish(o.amount ?? o.amount_paid ?? o.paid_amount);
   // Montant exprimé en euros décimaux → centimes. (Cohérent avec SEAM n°2.)
   const amountCents = amountRaw === null ? null : Math.round(amountRaw * 100);
-  return { status, paid: status === PAID_STATUS, amountCents, raw: data };
+  return { status, paid: status === PAID_STATUS, amountCents, amountRaw, raw: data };
 }
 
 /**
