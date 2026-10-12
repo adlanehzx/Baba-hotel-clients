@@ -1,17 +1,20 @@
 /* Palette reprise du site du Baba Hotel : pierre de Paris, vert porte cochère,
    magenta de la ligne 4 (accent unique). */
 :root {
-  --pierre: #e4e3de;
-  --pierre-2: #d8d7d1;
-  --blanc: #f7f7f4;
-  --zinc: #56636a;
-  --porte: #1e3a32;
-  --porte-2: #2a4d43;
+  /* Palette harmonisée avec Relais : vert hôtelier profond, papier crème, accent laiton. */
+  --pierre: #efeae0;
+  --pierre-2: #e2dccf;
+  --blanc: #ffffff;
+  --zinc: #5c6b64;
+  --porte: #123d36;
+  --porte-2: #1b4f46;
   --ligne4: #a0006e;
   --ligne4-dark: #7f0058;
-  --encre: #17201c;
-  --ok: #2f6b3f;
-  --warn: #9a5b00;
+  --encre: #17302a;
+  --ok: #2f7d55;
+  --warn: #9a6a1c;
+  --laiton: #b08d46;
+  --laiton-soft: #e8dab4;
 
   --serif: "Bodoni Moda", "Didot", Georgia, serif;
   --sans: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", "Noto Sans", "Noto Sans Arabic", "PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
